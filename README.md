@@ -29,6 +29,16 @@ Integration pipeline for mechano-biological and spatial-transcriptomic datasets 
 
 ## Installation 
 
+**Prerequisites**
+
+- Python 3.12+
+
+### 1. Clone the repository 
+
+```bash
+git clone https://github.com/ChristianLangridge/LEMBAS-RNN-benchmark.git
+cd SMT-Pipeline
+
 ---
 
 ## Data Requirements
