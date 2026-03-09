@@ -38,6 +38,13 @@ Integration pipeline for mechano-biological and spatial-transcriptomic datasets 
 ```bash
 git clone https://github.com/ChristianLangridge/LEMBAS-RNN-benchmark.git
 cd SMT-Pipeline
+```
+
+### 2. Create and activate a conda environment using smt_pipeline.yml 
+
+```bash
+conda env create -f smt_pipeline.yml 
+```
 
 ---
 
@@ -46,6 +53,15 @@ cd SMT-Pipeline
 --- 
 
 ## Usage
+
+### 1. Installing `pip install -e .`
+
+Before running scripts, register the package using `pip install -e .` from the project root with `pyproject.toml`. 
+
+### 2. Data implementation
+
+Place all raw data within a 'data/raw/' folder so the path-finding system can retrieve it. 
+
 
 ---
 
