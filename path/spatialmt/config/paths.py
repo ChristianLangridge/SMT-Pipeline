@@ -102,8 +102,8 @@ class Paths:
     Never hardcode a path anywhere else in the codebase.
     """
     # --- raw inputs --------------------------------------------------------
-    raw_tpm        = Dirs.raw      / "/Users/christianlangridge/Desktop/SMT-Pipeline/data/raw/Original_TPM_data.csv"
-    raw_tpm_txt    = Dirs.raw      / "/Users/christianlangridge/Desktop/SMT-Pipeline/data/raw/Original_TPM_data.txt"
+    raw_tpm_csv    = Dirs.raw      / "Original_TPM_data.csv"
+    raw_tpm_txt    = Dirs.raw      / "Original_TPM_data.txt"
     
 
     # --- interim (post-cleaning, pre-feature-engineering) ------------------
@@ -162,8 +162,7 @@ def validate_raw_inputs() -> None:
     Call this ONCE on rank 0 only in distributed runs (see setup_output_dirs).
     """
     required = {
-        "Original TPM CSV":  Paths.raw_tpm,
-        "Original TPM text": Paths.raw_tpm_txt,
+        "Original TPM CSV":  Paths.raw_tpm_csv,
     }
     missing = {name: path for name, path in required.items() if not path.exists()}
     if missing:
