@@ -92,7 +92,7 @@ class Dirs:
     results  = PROJECT_ROOT / "results"
     #models   = PROJECT_ROOT / "models"
     src      = PROJECT_ROOT / "src"
-    plotting = PROJECT_ROOT / "src" / "plotting"
+    EDA_plotting = PROJECT_ROOT / "src" / "EDA_plotting"
 
 
 class Paths:

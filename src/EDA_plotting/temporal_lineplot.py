@@ -3,8 +3,9 @@ import numpy as np
 import matplotlib.pyplot as plt
 from spatialmt.config import Paths, Dirs, setup_output_dirs, validate_raw_inputs
 
-setup_output_dirs()
-validate_raw_inputs()
+if __name__ == '__main__':
+    setup_output_dirs()
+    validate_raw_inputs()
 
 # load data
 processed_tpm = pd.read_csv(Paths.processed_tpm, header=0, index_col=0)
@@ -33,7 +34,6 @@ x = np.arange(len(timepoints))
 genes = subset_expr['hgnc_symbol'].tolist()  
 
 # line plotting 
-
 fig, axes = plt.subplots(4, 3, figsize=(15, 16))
 axes = axes.flatten()  # easier to index
 
