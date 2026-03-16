@@ -87,10 +87,9 @@ class Dirs:
     root     = PROJECT_ROOT
     data     = PROJECT_ROOT / "data"
     tpm      = PROJECT_ROOT / "data" / "tpm"
-    
     raw      = PROJECT_ROOT / "data" / "raw"
     #interim  = PROJECT_ROOT / "data" / "interim"
-    processed = PROJECT_ROOT / "data" / "processed"
+    processed = PROJECT_ROOT / "data" / "tpm" / "processed"
     results  = PROJECT_ROOT / "results"
     #models   = PROJECT_ROOT / "models"
     src      = PROJECT_ROOT / "src"
@@ -108,8 +107,8 @@ class Paths:
     raw_tpm_csv    = Dirs.tpm      / "Original_TPM_data.csv"
     raw_tpm_txt    = Dirs.raw      / "Original_TPM_data.txt"
     raw_count_csv = Dirs.raw / "raw_counts_GRCh38_p13_NCBI.csv"
+    biomark_key_txt = Dirs.raw / "biomart_key.txt"
     
-
     # --- interim (post-cleaning, pre-feature-engineering) ------------------
     #cleaned_raw_count_csv      = Dirs.raw  / "cleaned_raw_count.csv"
 
@@ -167,6 +166,7 @@ def validate_raw_inputs() -> None:
     """
     required = {
         "Original TPM CSV":  Paths.raw_tpm_csv,
+        "Raw data file CSV": Paths.raw_count_csv,
     }
     missing = {name: path for name, path in required.items() if not path.exists()}
     if missing:
