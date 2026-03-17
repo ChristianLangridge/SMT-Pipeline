@@ -85,15 +85,31 @@ PROJECT_ROOT: Path = _find_project_root()
 class Dirs:
     """Top-level directories."""
     root     = PROJECT_ROOT
+    
+    
+    test     = PROJECT_ROOT / "test"
+    
+    
     data     = PROJECT_ROOT / "data"
     tpm      = PROJECT_ROOT / "data" / "tpm"
     raw      = PROJECT_ROOT / "data" / "raw"
-    #interim  = PROJECT_ROOT / "data" / "interim"
     processed = PROJECT_ROOT / "data" / "tpm" / "processed"
+    
+    
     results  = PROJECT_ROOT / "results"
-    #models   = PROJECT_ROOT / "models"
+    
+    
     src      = PROJECT_ROOT / "src"
     EDA_plotting = PROJECT_ROOT / "src" / "EDA_plotting"
+    
+    
+    organoid_pinn = PROJECT_ROOT / "organoid_pinn"
+    point_cloud = PROJECT_ROOT / "organoid_pinn" / "point_cloud"
+    physics = PROJECT_ROOT / "organoid_pinn" / "physics"
+    network = PROJECT_ROOT / "organoid_pinn" / "network"
+    solver = PROJECT_ROOT / "organoid_pinn" / "solver"
+    loss = PROJECT_ROOT / "organoid_pinn" / "loss"
+    training = PROJECT_ROOT / "organoid_pinn" / "training"
 
 
 class Paths:
@@ -103,15 +119,12 @@ class Paths:
     Add a new entry here whenever you introduce a new canonical data file.
     Never hardcode a path anywhere else in the codebase.
     """
-    # --- raw inputs --------------------------------------------------------
+    # --- EDA Lancaster time-series bulk RNA data  --------------------------------------------------------
     raw_tpm_csv    = Dirs.tpm      / "Original_TPM_data.csv"
     raw_tpm_txt    = Dirs.raw      / "Original_TPM_data.txt"
     raw_count_csv = Dirs.raw / "raw_counts_GRCh38_p13_NCBI.csv"
     biomark_key_txt = Dirs.raw / "biomart_key.txt"
     
-    # --- interim (post-cleaning, pre-feature-engineering) ------------------
-    #cleaned_raw_count_csv      = Dirs.raw  / "cleaned_raw_count.csv"
-
     # --- processed (model-ready) -------------------------------------------
     processed_tpm  = Dirs.processed / "processed_tpm.csv"
 
