@@ -91,9 +91,15 @@ class Dirs:
     
     
     data     = PROJECT_ROOT / "data"
-    tpm      = PROJECT_ROOT / "data" / "tpm"
-    raw      = PROJECT_ROOT / "data" / "raw"
-    processed = PROJECT_ROOT / "data" / "tpm" / "processed"
+    
+    # EDA data
+    EDA_tpm      = PROJECT_ROOT / "data" / "EDA_tpm"
+    EDA_raw      = PROJECT_ROOT / "data" / "EDA_raw"
+    EDA_processed = PROJECT_ROOT / "data" / "EDA_tpm" / "EDA_processed"
+    
+    # sc-RNA-seq model data
+    model_data = PROJECT_ROOT / "data" / "model_data"
+    
     
     
     results  = PROJECT_ROOT / "results"
@@ -120,13 +126,13 @@ class Paths:
     Never hardcode a path anywhere else in the codebase.
     """
     # --- EDA Lancaster time-series bulk RNA data  --------------------------------------------------------
-    raw_tpm_csv    = Dirs.tpm      / "Original_TPM_data.csv"
-    raw_tpm_txt    = Dirs.raw      / "Original_TPM_data.txt"
-    raw_count_csv = Dirs.raw / "raw_counts_GRCh38_p13_NCBI.csv"
-    biomark_key_txt = Dirs.raw / "biomart_key.txt"
+    raw_tpm_csv    = Dirs.EDA_tpm      / "Original_TPM_data.csv"
+    raw_tpm_txt    = Dirs.EDA_raw      / "Original_TPM_data.txt"
+    raw_count_csv = Dirs.EDA_raw / "raw_counts_GRCh38_p13_NCBI.csv"
+    biomark_key_txt = Dirs.EDA_raw / "biomart_key.txt"
     
     # --- processed (model-ready) -------------------------------------------
-    processed_tpm  = Dirs.processed / "processed_tpm.csv"
+    processed_tpm  = Dirs.EDA_processed / "processed_tpm.csv"
 
 
 # ---------------------------------------------------------------------------
@@ -158,7 +164,7 @@ def setup_output_dirs() -> None:
             validate_raw_inputs()
         dist.barrier()
     """
-    for _dir in (Dirs.processed, Dirs.results):
+    for _dir in (Dirs.EDA_processed, Dirs.results):
         _dir.mkdir(parents=True, exist_ok=True)
 
 
