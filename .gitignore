@@ -229,3 +229,5 @@ __pycache__
 # .vscode set-up 
 .vscode/
 
+# .claude files
+.claude/
