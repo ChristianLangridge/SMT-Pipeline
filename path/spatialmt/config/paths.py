@@ -89,6 +89,7 @@ class Dirs:
     
     data     = PROJECT_ROOT / "data"
     
+    
     # EDA data
     EDA      = PROJECT_ROOT / "data" / "EDA"
     EDA_processed = PROJECT_ROOT / "data" / "EDA" / "processed"
@@ -111,16 +112,21 @@ class Dirs:
     GLI3_ko_data_ml = PROJECT_ROOT / "data" / "GLI3_ko_validation" / "ML_data"
     GLI3_ko_data_unstiched = PROJECT_ROOT / "data" / "GLI3_ko_validation" / "matrix_bundle"
     
-    
     # src (run) folder
     src      = PROJECT_ROOT / "src"
+    data_prep = PROJECT_ROOT / "src" / "data_prep"
     EDA_plotting = PROJECT_ROOT / "src" / "EDA_plotting"
+    figures = PROJECT_ROOT / "src" / "figures"
+    train = PROJECT_ROOT / "src" / "train"
 
-    # Output
+    # output
     results  = PROJECT_ROOT / "results"
     trained_models = PROJECT_ROOT / "results" / "trained_models"
     SHAP_values = PROJECT_ROOT / "results" / "SHAP_values"
     
+    
+    # test
+    test = PROJECT_ROOT / "test"
     
     
 
