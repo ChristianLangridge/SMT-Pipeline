@@ -70,21 +70,23 @@ if __name__ == "__main__":
 
     accuracy = accuracy_score(y_test, y_pred)
     f1       = f1_score(y_test, y_pred, average="weighted")
+    f1_macro = f1_score(y_test, y_pred, average="macro")
     recall   = recall_score(y_test, y_pred, average="weighted")
 
     print(f"Accuracy : {accuracy:.4f}")
     print(f"F1       : {f1:.4f}  (weighted)")
+    print(f"F1       : {f1_macro:.4f}  (macro)")
     print(f"Recall   : {recall:.4f}  (weighted)")
     print()
     print(classification_report(y_test, y_pred, target_names=le.classes_))
 
-    proba = clf.predict_proba(X_test)
-    proba_df = pd.DataFrame(proba, index=X_test.index, columns=le.classes_)
-    proba_df.to_csv(Dirs.results / "xgb_classifier_proba.csv")
-    print(f"Probability distributions saved to {Dirs.results / 'xgb_classifier_proba.csv'}")
+    #proba = clf.predict_proba(X_test)
+    #proba_df = pd.DataFrame(proba, index=X_test.index, columns=le.classes_)
+    #proba_df.to_csv(Dirs.results / "xgb_classifier_proba.csv")
+    #print(f"Probability distributions saved to {Dirs.results / 'xgb_classifier_proba.csv'}")
 
-    out_dir = Dirs.trained_models
-    clf.save_model(out_dir / "xgb_classifier.ubj")
-    joblib.dump(le, out_dir / "xgb_label_encoder.joblib")
-    print(f"Model saved to {out_dir / 'xgb_classifier.ubj'}")
-    print(f"Label encoder saved to {out_dir / 'xgb_label_encoder.joblib'}")
+    #out_dir = Dirs.trained_models
+    #clf.save_model(out_dir / "xgb_classifier.ubj")
+    #joblib.dump(le, out_dir / "xgb_label_encoder.joblib")
+    #print(f"Model saved to {out_dir / 'xgb_classifier.ubj'}")
+    #print(f"Label encoder saved to {out_dir / 'xgb_label_encoder.joblib'}")
