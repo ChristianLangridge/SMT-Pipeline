@@ -16,11 +16,11 @@ if __name__ == "__main__":
         n_top_genes=2000,
     )
 
-    X = dataset["X"]
-    cell_labels = dataset["cell_labels"]
-    gene_labels = dataset["gene_labels"]
-    y = dataset["y"]
-    orig_ident = dataset["orig_ident"]
+    X = dataset.X
+    cell_labels = dataset.cell_labels
+    gene_labels = dataset.gene_labels
+    y = dataset.y
+    orig_ident = dataset.orig_ident
 
     pseudotime = generate_pseudotime_labels(orig_ident)
 
@@ -31,7 +31,7 @@ if __name__ == "__main__":
     print(f"Pseudotime labels  : {pseudotime.value_counts().sort_index().to_dict()}")
 
     out_dir = Dirs.model_data_ml
-    np.save(out_dir / "expression_matrix.npy", X)
+    np.savez_compressed(out_dir / "expression_matrix.npz", X=X)
     pd.Series(cell_labels, name="cell_id").to_csv(out_dir / "cell_labels.csv", index=False)
     pd.Series(gene_labels, name="gene_id").to_csv(out_dir / "gene_labels.csv", index=False)
     y.reset_index(drop=True).to_csv(out_dir / "cell_type_labels.csv", index=False)

@@ -40,7 +40,7 @@ if __name__ == "__main__":
     y_raw = pd.read_csv(data_dir / "cell_type_labels.csv").squeeze()
 
     X = pd.DataFrame(
-        np.load(data_dir / "expression_matrix.npy"),
+        np.load(data_dir / "expression_matrix.npz")["X"],
         index=cell_labels,
         columns=gene_labels,
     )

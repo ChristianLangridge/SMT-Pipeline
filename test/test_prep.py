@@ -107,9 +107,6 @@ def test_hvg_n_top_exceeds_available():
 # TODO (Batch 2): update assertions to dataclass interface once Issue 5 lands.
 # ---------------------------------------------------------------------------
 
-_EXPECTED_KEYS = {"X", "cell_labels", "gene_labels", "y", "orig_ident"}
-
-
 @pytest.fixture()
 def patched_prepare(monkeypatch):
     """Return a prepare_dataset callable whose load_h5ad is replaced with
@@ -123,24 +120,25 @@ def patched_prepare(monkeypatch):
     return prepare_dataset
 
 
-def test_prepare_dataset_returns_all_keys(patched_prepare):
+def test_prepare_dataset_returns_prepared_data(patched_prepare):
+    from spatialmt.data_preparation.prep import PreparedData
     result = patched_prepare("dummy.h5ad", n_top_genes=10, hvg_flavor="seurat")
-    assert _EXPECTED_KEYS == set(result.keys())
+    assert isinstance(result, PreparedData)
 
 
 def test_prepare_dataset_shapes_consistent(patched_prepare):
     result = patched_prepare("dummy.h5ad", n_top_genes=10, hvg_flavor="seurat")
-    n = result["X"].shape[0]
-    assert len(result["cell_labels"]) == n
-    assert len(result["y"]) == n
-    assert len(result["orig_ident"]) == n
+    n = result.X.shape[0]
+    assert len(result.cell_labels) == n
+    assert len(result.y) == n
+    assert len(result.orig_ident) == n
 
 
 def test_prepare_dataset_gene_count(patched_prepare):
     n_top = 10
     result = patched_prepare("dummy.h5ad", n_top_genes=n_top, hvg_flavor="seurat")
-    assert result["X"].shape[1] == len(result["gene_labels"])
-    assert result["X"].shape[1] <= n_top
+    assert result.X.shape[1] == len(result.gene_labels)
+    assert result.X.shape[1] <= n_top
 
 
 TIMEPOINTS = ["HB4_D5", "HB4_D7", "HB4_D11", "HB4_D16", "HB4_D21", "HB4_D30"]
@@ -173,12 +171,11 @@ def test_extract_expression_matrix_sparse():
 # ---------------------------------------------------------------------------
 
 def test_expression_matrix_with_nan():
-    # Current behaviour: NaN propagates silently into the output array.
-    # Batch 2 should replace this with pytest.raises(ValueError).
+    from spatialmt.data_preparation.prep import DataIntegrityError
     X = np.array([[1.0, np.nan], [3.0, 4.0]], dtype=np.float32)
     adata = ad.AnnData(X=X)
-    result = extract_expression_matrix(adata)
-    assert np.isnan(result).any(), "expected NaN to pass through (current behaviour)"
+    with pytest.raises(DataIntegrityError, match="NaN"):
+        extract_expression_matrix(adata)
 
 
 def test_expression_matrix_with_negative():
@@ -191,12 +188,11 @@ def test_expression_matrix_with_negative():
 
 
 def test_expression_matrix_with_inf():
-    # Current behaviour: inf propagates silently into the output array.
-    # Batch 2 should replace this with pytest.raises(ValueError).
+    from spatialmt.data_preparation.prep import DataIntegrityError
     X = np.array([[1.0, np.inf], [3.0, 4.0]], dtype=np.float32)
     adata = ad.AnnData(X=X)
-    result = extract_expression_matrix(adata)
-    assert np.isinf(result).any(), "expected inf to pass through (current behaviour)"
+    with pytest.raises(DataIntegrityError, match="Inf"):
+        extract_expression_matrix(adata)
 
 
 # ---------------------------------------------------------------------------
@@ -313,3 +309,43 @@ def test_pseudotime_contract_length_matches_input(pseudotime_fn):
     s = pd.Series(TIMEPOINTS * 10)
     result = pseudotime_fn(s)
     assert len(result) == len(s)
+
+
+# ---------------------------------------------------------------------------
+# check_memory_feasibility
+# ---------------------------------------------------------------------------
+
+from spatialmt.data_preparation.prep import check_memory_feasibility
+
+
+def test_memory_feasibility_no_warn_small_data():
+    """Small dataset should not trigger a warning."""
+    import warnings
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", UserWarning)
+        check_memory_feasibility(n_cells=100, n_genes=500, n_top_genes=50)
+
+
+def test_memory_feasibility_warns_large_data(monkeypatch):
+    """Simulate insufficient RAM: patch available memory to 1 byte."""
+    import psutil
+    mock_vm = psutil.virtual_memory()._replace(available=1)
+    monkeypatch.setattr(psutil, "virtual_memory", lambda: mock_vm)
+    with pytest.warns(UserWarning, match="Estimated peak"):
+        check_memory_feasibility(n_cells=10_000, n_genes=20_000, n_top_genes=2_000)
+
+
+def test_memory_feasibility_estimation():
+    """Peak estimate formula: sparse + dense bytes."""
+    import psutil
+    n_cells, n_genes, n_top = 1_000, 10_000, 2_000
+    expected = n_cells * n_genes * 0.1 * 8 + n_cells * n_top * 4
+    # Should not warn when available memory is very large (patch to 1 TB)
+    import unittest.mock as mock
+    mock_vm = psutil.virtual_memory()._replace(available=int(1e12))
+    with mock.patch.object(psutil, "virtual_memory", return_value=mock_vm):
+        import warnings
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", UserWarning)
+            check_memory_feasibility(n_cells, n_genes, n_top)
+    assert expected == 1_000 * 10_000 * 0.1 * 8 + 1_000 * 2_000 * 4

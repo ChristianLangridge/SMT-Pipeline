@@ -1,6 +1,13 @@
+import dataclasses
+import warnings
+import psutil
 import scanpy as sc
 import numpy as np
 import pandas as pd
+
+
+class DataIntegrityError(ValueError):
+    """Raised when the expression matrix contains invalid values."""
 from spatialmt.config.paths import Dirs, setup_output_dirs, validate_raw_inputs
 
 
@@ -19,7 +26,12 @@ def extract_expression_matrix(adata: sc.AnnData) -> np.ndarray:
     X = adata.X
     if hasattr(X, "toarray"):
         X = X.toarray()
-    return X.astype(np.float32)
+    X = X.astype(np.float32)
+    if np.any(np.isnan(X)):
+        raise DataIntegrityError("NaN detected in expression matrix")
+    if np.any(np.isinf(X)):
+        raise DataIntegrityError("Inf detected in expression matrix")
+    return X
 
 
 def extract_cell_labels(adata: sc.AnnData) -> pd.Index:
@@ -76,7 +88,13 @@ def select_highly_variable_genes(
     AnnData
         Filtered to HVG columns only (copy).
     """
+    import warnings
     adata = adata.copy()
+    xmax = adata.X.max() if not hasattr(adata.X, 'toarray') else adata.X.toarray().max()
+    if flavor == "seurat" and xmax > 20.0:
+        warnings.warn(f"flavor='seurat' expects log-normalised data but X.max()={xmax:.1f}")
+    if flavor == "seurat_v3" and xmax < 20.0:
+        warnings.warn(f"flavor='seurat_v3' expects raw counts but X.max()={xmax:.1f}")
     sc.pp.highly_variable_genes(adata, n_top_genes=n_top_genes, flavor=flavor)
     adata = adata[:, adata.var["highly_variable"]]
     return adata
@@ -134,6 +152,41 @@ def generate_pseudotime_labels(
 
 
 # ---------------------------------------------------------------------------
+# Memory pre-check
+# ---------------------------------------------------------------------------
+
+def check_memory_feasibility(n_cells: int, n_genes: int, n_top_genes: int) -> None:
+    """Warn if estimated peak memory exceeds 80% of available RAM."""
+    peak_sparse_bytes = n_cells * n_genes * 0.1 * 8    # ~10% density, float64
+    peak_dense_bytes = n_cells * n_top_genes * 4        # float32 after HVG
+    peak_total = peak_sparse_bytes + peak_dense_bytes
+
+    available = psutil.virtual_memory().available
+    if peak_total > available * 0.8:
+        warnings.warn(
+            f"Estimated peak {peak_total/1e9:.1f}GB exceeds 80% of available {available/1e9:.1f}GB"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Return type
+# ---------------------------------------------------------------------------
+
+@dataclasses.dataclass(frozen=True)
+class PreparedData:
+    X: np.ndarray        # (n_cells, n_hvgs), float32
+    cell_labels: pd.Index
+    gene_labels: pd.Index  # HVG subset
+    y: pd.Series           # cell-type labels
+    orig_ident: pd.Series  # timepoint strings
+
+    def __post_init__(self):
+        assert self.X.shape[0] == len(self.cell_labels) == len(self.y)
+        assert self.X.shape[1] == len(self.gene_labels)
+        assert self.X.dtype == np.float32
+
+
+# ---------------------------------------------------------------------------
 # Convenience wrapper
 # ---------------------------------------------------------------------------
 
@@ -155,6 +208,10 @@ def prepare_dataset(
         y           : pd.Series  (cell-type labels)
     """
     adata = load_h5ad(h5ad_path)
+    check_memory_feasibility(adata.n_obs, adata.n_vars, n_top_genes)
+
+    sc.pp.normalize_total(adata, target_sum=1e4)
+    sc.pp.log1p(adata)
 
     adata_hvg = select_highly_variable_genes(adata, n_top_genes=n_top_genes, flavor=hvg_flavor)
 
@@ -163,13 +220,13 @@ def prepare_dataset(
     gene_labels = extract_gene_labels(adata_hvg)
     y = extract_cell_type_labels(adata_hvg, cell_type_key=cell_type_key)
 
-    return {
-        "X": X,
-        "cell_labels": cell_labels,
-        "gene_labels": gene_labels,
-        "y": y,
-        "orig_ident": adata_hvg.obs["orig.ident"].copy(),
-    }
+    return PreparedData(
+        X=X,
+        cell_labels=cell_labels,
+        gene_labels=gene_labels,
+        y=y,
+        orig_ident=adata_hvg.obs["orig.ident"].copy(),
+    )
 
 
 
