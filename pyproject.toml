@@ -15,8 +15,19 @@ dependencies = [
     "numpy",
 ]
 
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "scanpy",
+    "anndata",
+    "scipy",
+]
+
 [tool.setuptools.packages.find]
 where = ["path"]
+
+[tool.pytest.ini_options]
+testpaths = ["test"]
 
 # ---------------------------------------------------------------------------
 # After cloning, run once from the project root:

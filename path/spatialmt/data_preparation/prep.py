@@ -87,20 +87,15 @@ def select_highly_variable_genes(
 # ---------------------------------------------------------------------------
 
 
-# this function generates a linear mapping of pseudotime labels in the following order:
-# "HB4_D5" = 0.0
-# "HB4_D7" = 
-# "HB4_D11"
-# "HB4_D16" = 
-# "HB4_D21" = 0.64
-# "HB4_D30" = 1.0
-
 def generate_pseudotime_labels(
     orig_ident: pd.Series,
     min_label: str = "HB4_D5",
     max_label: str = "HB4_D30",
 ) -> pd.Series:
     """
+    Scaffold pseudotime — linearly scaled collection day. Will be replaced by
+    diffusion pseudotime. See TDD v1.2.0 §S3.
+
     Assign a linearly scaled pseudotime value to each cell based on its
     ``orig.ident`` timepoint string (e.g. ``"HB4_D7"``).
 

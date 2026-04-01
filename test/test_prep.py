@@ -16,6 +16,7 @@ from spatialmt.data_preparation.prep import (
     extract_cell_type_labels,
     generate_pseudotime_labels,
     select_highly_variable_genes,
+    prepare_dataset,
 )
 
 
@@ -32,8 +33,14 @@ def _make_adata(n_cells=10, n_genes=5, sparse=False, scale=None):
         X = np.random.rand(n_cells, n_genes).astype(np.float32)
     if sparse:
         X = sp.csr_matrix(X)
-    obs = pd.DataFrame({"cell_type": [f"type_{i % 3}" for i in range(n_cells)]},
-                       index=[f"cell_{i}" for i in range(n_cells)])
+    _timepoints = ["HB4_D5", "HB4_D7", "HB4_D11", "HB4_D16", "HB4_D21", "HB4_D30"]
+    obs = pd.DataFrame(
+        {
+            "cell_type": [f"type_{i % 3}" for i in range(n_cells)],
+            "orig.ident": [_timepoints[i % len(_timepoints)] for i in range(n_cells)],
+        },
+        index=[f"cell_{i}" for i in range(n_cells)],
+    )
     var = pd.DataFrame(index=[f"gene_{i}" for i in range(n_genes)])
     return ad.AnnData(X=X, obs=obs, var=var)
 
@@ -93,6 +100,49 @@ def test_hvg_n_top_exceeds_available():
     assert result.n_vars == adata.n_vars
 
 
+# ---------------------------------------------------------------------------
+# prepare_dataset
+# Monkeypatches load_h5ad so no real .h5ad file is needed.
+# Tests written against the current dict return type.
+# TODO (Batch 2): update assertions to dataclass interface once Issue 5 lands.
+# ---------------------------------------------------------------------------
+
+_EXPECTED_KEYS = {"X", "cell_labels", "gene_labels", "y", "orig_ident"}
+
+
+@pytest.fixture()
+def patched_prepare(monkeypatch):
+    """Return a prepare_dataset callable whose load_h5ad is replaced with
+    a function that returns a synthetic 30-cell / 50-gene AnnData."""
+    import spatialmt.data_preparation.prep as prep_module
+
+    def _fake_load(path):
+        return _make_adata(n_cells=30, n_genes=50, scale="normalised")
+
+    monkeypatch.setattr(prep_module, "load_h5ad", _fake_load)
+    return prepare_dataset
+
+
+def test_prepare_dataset_returns_all_keys(patched_prepare):
+    result = patched_prepare("dummy.h5ad", n_top_genes=10, hvg_flavor="seurat")
+    assert _EXPECTED_KEYS == set(result.keys())
+
+
+def test_prepare_dataset_shapes_consistent(patched_prepare):
+    result = patched_prepare("dummy.h5ad", n_top_genes=10, hvg_flavor="seurat")
+    n = result["X"].shape[0]
+    assert len(result["cell_labels"]) == n
+    assert len(result["y"]) == n
+    assert len(result["orig_ident"]) == n
+
+
+def test_prepare_dataset_gene_count(patched_prepare):
+    n_top = 10
+    result = patched_prepare("dummy.h5ad", n_top_genes=n_top, hvg_flavor="seurat")
+    assert result["X"].shape[1] == len(result["gene_labels"])
+    assert result["X"].shape[1] <= n_top
+
+
 TIMEPOINTS = ["HB4_D5", "HB4_D7", "HB4_D11", "HB4_D16", "HB4_D21", "HB4_D30"]
 EXPECTED   = [0.0,       0.08,      0.24,       0.44,       0.64,       1.0]
 
@@ -114,6 +164,39 @@ def test_extract_expression_matrix_sparse():
     X = extract_expression_matrix(adata)
     assert isinstance(X, np.ndarray)
     assert X.shape == (10, 5)
+
+
+# ---------------------------------------------------------------------------
+# extract_expression_matrix — current behaviour with invalid values
+# These are DOCUMENTATION tests: they pin what the function does today
+# (pass-through) so that Batch 2 validation guards have a failing baseline.
+# ---------------------------------------------------------------------------
+
+def test_expression_matrix_with_nan():
+    # Current behaviour: NaN propagates silently into the output array.
+    # Batch 2 should replace this with pytest.raises(ValueError).
+    X = np.array([[1.0, np.nan], [3.0, 4.0]], dtype=np.float32)
+    adata = ad.AnnData(X=X)
+    result = extract_expression_matrix(adata)
+    assert np.isnan(result).any(), "expected NaN to pass through (current behaviour)"
+
+
+def test_expression_matrix_with_negative():
+    # Current behaviour: negative values pass through unchanged.
+    # Batch 2 should replace this with pytest.raises(ValueError).
+    X = np.array([[1.0, -2.0], [3.0, 4.0]], dtype=np.float32)
+    adata = ad.AnnData(X=X)
+    result = extract_expression_matrix(adata)
+    assert (result < 0).any(), "expected negative values to pass through (current behaviour)"
+
+
+def test_expression_matrix_with_inf():
+    # Current behaviour: inf propagates silently into the output array.
+    # Batch 2 should replace this with pytest.raises(ValueError).
+    X = np.array([[1.0, np.inf], [3.0, 4.0]], dtype=np.float32)
+    adata = ad.AnnData(X=X)
+    result = extract_expression_matrix(adata)
+    assert np.isinf(result).any(), "expected inf to pass through (current behaviour)"
 
 
 # ---------------------------------------------------------------------------
@@ -193,3 +276,40 @@ def test_pseudotime_length_preserved():
     s = pd.Series(TIMEPOINTS * 100)
     pt = generate_pseudotime_labels(s)
     assert len(pt) == len(s)
+
+
+# ---------------------------------------------------------------------------
+# Pseudotime interface contract
+# Parametrized over all pseudotime implementations. Add "diffusion" when
+# the diffusion pseudotime function is available.
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(params=["scaffold"])  # add "diffusion" when available
+def pseudotime_fn(request):
+    if request.param == "scaffold":
+        return generate_pseudotime_labels
+
+
+def test_pseudotime_contract_output_is_series(pseudotime_fn):
+    s = pd.Series(TIMEPOINTS)
+    result = pseudotime_fn(s)
+    assert isinstance(result, pd.Series)
+
+
+def test_pseudotime_contract_name_is_pseudotime(pseudotime_fn):
+    s = pd.Series(TIMEPOINTS)
+    result = pseudotime_fn(s)
+    assert result.name == "pseudotime"
+
+
+def test_pseudotime_contract_values_in_unit_interval(pseudotime_fn):
+    s = pd.Series(TIMEPOINTS)
+    result = pseudotime_fn(s)
+    valid = result.dropna()
+    assert (valid >= 0.0).all() and (valid <= 1.0).all()
+
+
+def test_pseudotime_contract_length_matches_input(pseudotime_fn):
+    s = pd.Series(TIMEPOINTS * 10)
+    result = pseudotime_fn(s)
+    assert len(result) == len(s)
