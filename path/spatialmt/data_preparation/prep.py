@@ -57,7 +57,7 @@ def extract_cell_type_labels(adata: sc.AnnData, cell_type_key: str = "cell_type"
 def select_highly_variable_genes(
     adata: sc.AnnData,
     n_top_genes: int = 2000,
-    flavor: str = "seurat_v3",
+    flavor: str = "seurat",
 ) -> sc.AnnData:
     """
     Filter adata to the top highly variable genes.
@@ -65,11 +65,11 @@ def select_highly_variable_genes(
     Parameters
     ----------
     adata : AnnData
-        Raw counts expected for flavor='seurat_v3'; log-normalised for 'seurat'/'cell_ranger'.
+        Log-normalised counts expected. Use 'seurat' or 'cell_ranger'; 'seurat_v3' expects raw counts and is not used here.
     n_top_genes : int
         Number of HVGs to retain.
     flavor : str
-        HVG method passed to scanpy. 'seurat_v3' works directly on raw counts.
+        HVG method passed to scanpy. Defaults to 'seurat', which expects log-normalised input.
 
     Returns
     -------
@@ -146,7 +146,7 @@ def prepare_dataset(
     h5ad_path,
     cell_type_key: str = "cell_type",
     n_top_genes: int = 2000,
-    hvg_flavor: str = "seurat_v3",
+    hvg_flavor: str = "seurat",
 ) -> dict:
     """
     Full preprocessing pipeline: load → extract → HVG filter.

@@ -15,6 +15,7 @@ from spatialmt.data_preparation.prep import (
     extract_gene_labels,
     extract_cell_type_labels,
     generate_pseudotime_labels,
+    select_highly_variable_genes,
 )
 
 
@@ -22,14 +23,74 @@ from spatialmt.data_preparation.prep import (
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _make_adata(n_cells=10, n_genes=5, sparse=False):
-    X = np.random.rand(n_cells, n_genes).astype(np.float32)
+def _make_adata(n_cells=10, n_genes=5, sparse=False, scale=None):
+    if scale == "normalised":
+        X = (np.random.rand(n_cells, n_genes) * 4).astype(np.float32)
+    elif scale == "raw":
+        X = (np.random.rand(n_cells, n_genes) * 10_000).astype(np.float32)
+    else:
+        X = np.random.rand(n_cells, n_genes).astype(np.float32)
     if sparse:
         X = sp.csr_matrix(X)
     obs = pd.DataFrame({"cell_type": [f"type_{i % 3}" for i in range(n_cells)]},
                        index=[f"cell_{i}" for i in range(n_cells)])
     var = pd.DataFrame(index=[f"gene_{i}" for i in range(n_genes)])
     return ad.AnnData(X=X, obs=obs, var=var)
+
+
+# ---------------------------------------------------------------------------
+# select_highly_variable_genes
+# ---------------------------------------------------------------------------
+
+def test_hvg_returns_correct_gene_count():
+    adata = _make_adata(n_cells=20, n_genes=50, scale="normalised")
+    result = select_highly_variable_genes(adata, n_top_genes=10, flavor="seurat")
+    assert result.n_vars == 10
+
+
+def test_hvg_output_is_copy():
+    adata = _make_adata(n_cells=20, n_genes=50, scale="normalised")
+    result = select_highly_variable_genes(adata, n_top_genes=10, flavor="seurat")
+    result.obs["sentinel"] = 99
+    assert "sentinel" not in adata.obs.columns
+
+
+def test_hvg_preserves_cell_count():
+    adata = _make_adata(n_cells=20, n_genes=50, scale="normalised")
+    result = select_highly_variable_genes(adata, n_top_genes=10, flavor="seurat")
+    assert result.n_obs == adata.n_obs
+
+
+def test_hvg_selected_genes_subset_of_input():
+    adata = _make_adata(n_cells=20, n_genes=50, scale="normalised")
+    result = select_highly_variable_genes(adata, n_top_genes=10, flavor="seurat")
+    assert set(result.var_names).issubset(set(adata.var_names))
+
+
+def test_hvg_seurat_on_normalised_no_warning():
+    adata = _make_adata(n_cells=20, n_genes=50, scale="normalised")
+    import warnings
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", UserWarning)
+        select_highly_variable_genes(adata, n_top_genes=10, flavor="seurat")
+
+
+def test_hvg_seurat_v3_on_normalised_warns():
+    adata = _make_adata(n_cells=20, n_genes=50, scale="normalised")
+    with pytest.warns(UserWarning):
+        select_highly_variable_genes(adata, n_top_genes=10, flavor="seurat_v3")
+
+
+def test_hvg_seurat_on_raw_warns():
+    adata = _make_adata(n_cells=20, n_genes=50, scale="raw")
+    with pytest.warns(UserWarning):
+        select_highly_variable_genes(adata, n_top_genes=10, flavor="seurat")
+
+
+def test_hvg_n_top_exceeds_available():
+    adata = _make_adata(n_cells=20, n_genes=10, scale="normalised")
+    result = select_highly_variable_genes(adata, n_top_genes=999, flavor="seurat")
+    assert result.n_vars == adata.n_vars
 
 
 TIMEPOINTS = ["HB4_D5", "HB4_D7", "HB4_D11", "HB4_D16", "HB4_D21", "HB4_D30"]

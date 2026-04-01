@@ -32,8 +32,8 @@ CELL_TYPE_COLOURS = {
 
 DAY_ORDER = ["D5", "D7", "D11", "D16", "D21", "D30"]
 
-NC_PROBA_PATH  = Dirs.results / "trained_models" / "cell_identity" / "nearest_centroid" / "nearest_centroid_proba.csv"
-XGB_PROBA_PATH = Dirs.results / "trained_models" / "cell_identity" / "xgb_classifier"   / "xgb_classifier_proba.csv"
+NC_PROBA_PATH  = Dirs.nearest_centroid / "nearest_centroid_proba.csv"
+XGB_PROBA_PATH = Dirs.xgb_classifier / "xgb_classifier_proba.csv"
 
 FIG_DIR = Dirs.results / "figures" / "cell_identity"
 FIG_DIR.mkdir(parents=True, exist_ok=True)

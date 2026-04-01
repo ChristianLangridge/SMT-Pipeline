@@ -41,10 +41,10 @@ if __name__ == "__main__":
     print()
     print(classification_report(y_test, y_pred))
 
-    #proba = clf.predict_proba(X_test)
-    #proba_df = pd.DataFrame(proba, index=X_test.index, columns=clf.classes_)
-    #proba_df.to_csv(Dirs.results / "nearest_centroid_proba.csv")
-    #print(f"Probability distributions saved to {Dirs.results / 'nearest_centroid_proba.csv'}")
+    proba = clf.predict_proba(X_test)
+    proba_df = pd.DataFrame(proba, index=X_test.index, columns=clf.classes_)
+    proba_df.to_csv(Dirs.results / "nearest_centroid_proba.csv")
+    print(f"Probability distributions saved to {Dirs.results / 'nearest_centroid_proba.csv'}")
 
-    #joblib.dump(clf, Dirs.trained_models / "nearest_centroid.joblib")
-    #print(f"Model saved to {Dirs.trained_models / 'nearest_centroid.joblib'}")
+    joblib.dump(clf, Dirs.trained_models / "nearest_centroid.joblib")
+    print(f"Model saved to {Dirs.trained_models / 'nearest_centroid.joblib'}")

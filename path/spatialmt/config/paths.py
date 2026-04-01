@@ -122,7 +122,14 @@ class Dirs:
     # output
     results  = PROJECT_ROOT / "results"
     trained_models = PROJECT_ROOT / "results" / "trained_models"
+    baselines = PROJECT_ROOT / "results" / "trained_models" / "baselines"
+    cell_identity = PROJECT_ROOT / "results" / "trained_models" / "baselines" / "cell_identity"
+    nearest_centroid = PROJECT_ROOT / "results" / "trained_models" / "baselines" / "cell_identity" / "nearest_centroid"
+    xgb_classifier = PROJECT_ROOT / "results" / "trained_models" / "baselines" / "cell_identity" / "xgb_classifier"
+    pseudo_time_regression = PROJECT_ROOT / "results" / "trained_models" / "baselines" / "pseudo_time_regression"
+    custom = PROJECT_ROOT / "results" / "trained_models" / "custom"
     SHAP_values = PROJECT_ROOT / "results" / "SHAP_values"
+    
     
     
     # test

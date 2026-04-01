@@ -10,7 +10,7 @@ from sklearn.preprocessing import LabelEncoder
 from sklearn.metrics import accuracy_score, f1_score, recall_score, classification_report
 from tqdm import tqdm
 
-
+# callback to track progress
 class TqdmCallback(xgb.callback.TrainingCallback):
     def __init__(self, n_estimators):
         self.pbar = tqdm(total=n_estimators, desc="Training", unit="tree")
@@ -31,6 +31,7 @@ class TqdmCallback(xgb.callback.TrainingCallback):
         self.pbar.close()
         return model
 
+# grabbing data inputs 
 if __name__ == "__main__":
     data_dir = Dirs.model_data_ml
 
@@ -44,13 +45,16 @@ if __name__ == "__main__":
         columns=gene_labels,
     )
 
+    # encoding categorical labels into numerical labels
     le = LabelEncoder()
     y = le.fit_transform(y_raw)
 
+    # test train split
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=0.2, random_state=42, stratify=y
     )
 
+    # initializing XGBC out-the-box
     clf = XGBClassifier(
         n_estimators=300,
         learning_rate=0.1,
@@ -61,13 +65,18 @@ if __name__ == "__main__":
         n_jobs=-1,
         callbacks=[TqdmCallback(n_estimators=300)],
     )
+    
+    # training model
     clf.fit(
         X_train, y_train,
         eval_set=[(X_train, y_train), (X_test, y_test)],
         verbose=False,
     )
+    
+    # running on held-out data
     y_pred = clf.predict(X_test)
 
+    # metrics of interest
     accuracy = accuracy_score(y_test, y_pred)
     f1       = f1_score(y_test, y_pred, average="weighted")
     f1_macro = f1_score(y_test, y_pred, average="macro")
@@ -80,13 +89,15 @@ if __name__ == "__main__":
     print()
     print(classification_report(y_test, y_pred, target_names=le.classes_))
 
-    #proba = clf.predict_proba(X_test)
-    #proba_df = pd.DataFrame(proba, index=X_test.index, columns=le.classes_)
-    #proba_df.to_csv(Dirs.results / "xgb_classifier_proba.csv")
-    #print(f"Probability distributions saved to {Dirs.results / 'xgb_classifier_proba.csv'}")
+    # getting identity probability distribution considering all classes
+    proba = clf.predict_proba(X_test)
+    proba_df = pd.DataFrame(proba, index=X_test.index, columns=le.classes_)
+    proba_df.to_csv(Dirs.results / "xgb_classifier_proba.csv")
+    print(f"Probability distributions saved to {Dirs.results / 'xgb_classifier_proba.csv'}")
 
-    #out_dir = Dirs.trained_models
-    #clf.save_model(out_dir / "xgb_classifier.ubj")
-    #joblib.dump(le, out_dir / "xgb_label_encoder.joblib")
-    #print(f"Model saved to {out_dir / 'xgb_classifier.ubj'}")
-    #print(f"Label encoder saved to {out_dir / 'xgb_label_encoder.joblib'}")
+    # saving all outputs 
+    out_dir = Dirs.trained_models
+    clf.save_model(out_dir / "xgb_classifier.ubj")
+    joblib.dump(le, out_dir / "xgb_label_encoder.joblib")
+    print(f"Model saved to {out_dir / 'xgb_classifier.ubj'}")
+    print(f"Label encoder saved to {out_dir / 'xgb_label_encoder.joblib'}")
