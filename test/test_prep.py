@@ -18,6 +18,7 @@ from spatialmt.data_preparation.prep import (
     select_highly_variable_genes,
     prepare_dataset,
 )
+from spatialmt.data_preparation.diffusion_trajectory import compute_diffusion_pseudotime
 
 
 # ---------------------------------------------------------------------------
@@ -108,35 +109,28 @@ def test_hvg_n_top_exceeds_available():
 # ---------------------------------------------------------------------------
 
 @pytest.fixture()
-def patched_prepare(monkeypatch):
-    """Return a prepare_dataset callable whose load_h5ad is replaced with
-    a function that returns a synthetic 30-cell / 50-gene AnnData."""
-    import spatialmt.data_preparation.prep as prep_module
-
-    def _fake_load(path):
-        return _make_adata(n_cells=30, n_genes=50, scale="normalised")
-
-    monkeypatch.setattr(prep_module, "load_h5ad", _fake_load)
-    return prepare_dataset
+def normalised_adata():
+    """30-cell / 50-gene log-normalised AnnData for use in prepare_dataset tests."""
+    return _make_adata(n_cells=30, n_genes=50, scale="normalised")
 
 
-def test_prepare_dataset_returns_prepared_data(patched_prepare):
+def test_prepare_dataset_returns_prepared_data(normalised_adata):
     from spatialmt.data_preparation.prep import PreparedData
-    result = patched_prepare("dummy.h5ad", n_top_genes=10, hvg_flavor="seurat")
+    result = prepare_dataset(normalised_adata, n_top_genes=10, hvg_flavor="seurat")
     assert isinstance(result, PreparedData)
 
 
-def test_prepare_dataset_shapes_consistent(patched_prepare):
-    result = patched_prepare("dummy.h5ad", n_top_genes=10, hvg_flavor="seurat")
+def test_prepare_dataset_shapes_consistent(normalised_adata):
+    result = prepare_dataset(normalised_adata, n_top_genes=10, hvg_flavor="seurat")
     n = result.X.shape[0]
     assert len(result.cell_labels) == n
     assert len(result.y) == n
     assert len(result.orig_ident) == n
 
 
-def test_prepare_dataset_gene_count(patched_prepare):
+def test_prepare_dataset_gene_count(normalised_adata):
     n_top = 10
-    result = patched_prepare("dummy.h5ad", n_top_genes=n_top, hvg_flavor="seurat")
+    result = prepare_dataset(normalised_adata, n_top_genes=n_top, hvg_flavor="seurat")
     assert result.X.shape[1] == len(result.gene_labels)
     assert result.X.shape[1] <= n_top
 
@@ -280,10 +274,37 @@ def test_pseudotime_length_preserved():
 # the diffusion pseudotime function is available.
 # ---------------------------------------------------------------------------
 
-@pytest.fixture(params=["scaffold"])  # add "diffusion" when available
+def _diffusion_pseudotime_from_orig_ident(orig_ident: pd.Series) -> pd.Series:
+    """
+    Wrap compute_diffusion_pseudotime to match the scaffold pseudotime
+    contract (accepts orig_ident Series, returns named pseudotime Series).
+    Builds a minimal synthetic AnnData from the orig_ident index.
+    """
+    import scanpy as sc
+    n = len(orig_ident)
+    n_genes = 50
+    rng = np.random.default_rng(42)
+    X = rng.random((n, n_genes)).astype(np.float32) * 4.0
+    obs = pd.DataFrame(
+        {
+            "orig.ident": orig_ident.values,
+            "class3": ["Neurectoderm"] * n,
+            "S.Score": rng.random(n),
+            "G2M.Score": rng.random(n),
+        },
+        index=[f"cell_{i}" for i in range(n)],
+    )
+    var = pd.DataFrame(index=[f"gene_{i}" for i in range(n_genes)])
+    adata = sc.AnnData(X=X, obs=obs, var=var)
+    return compute_diffusion_pseudotime(adata, cell_type_key="class3", n_top_genes=20, n_pcs=5, n_neighbors=5)
+
+
+@pytest.fixture(params=["scaffold", "diffusion"])
 def pseudotime_fn(request):
     if request.param == "scaffold":
         return generate_pseudotime_labels
+    if request.param == "diffusion":
+        return _diffusion_pseudotime_from_orig_ident
 
 
 def test_pseudotime_contract_output_is_series(pseudotime_fn):
@@ -349,3 +370,204 @@ def test_memory_feasibility_estimation():
             warnings.simplefilter("error", UserWarning)
             check_memory_feasibility(n_cells, n_genes, n_top)
     assert expected == 1_000 * 10_000 * 0.1 * 8 + 1_000 * 2_000 * 4
+
+
+# ---------------------------------------------------------------------------
+# diffusion_trajectory — unit tests
+# All use synthetic data; no .h5ad file required.
+# ---------------------------------------------------------------------------
+
+import scanpy as sc
+from spatialmt.data_preparation.diffusion_trajectory import (
+    exclude_proliferating,
+    select_hvgs,
+    regress_cell_cycle,
+    select_root,
+    compute_dpt,
+    assign_prolif_pseudotime,
+)
+
+
+def _make_diffusion_adata(n_cells=60, n_genes=80, include_prolif=True):
+    """Minimal log-normalised AnnData for diffusion trajectory tests."""
+    rng = np.random.default_rng(0)
+    X = rng.random((n_cells, n_genes)).astype(np.float32) * 4.0
+    timepoints = ["HB4_D5", "HB4_D7", "HB4_D11", "HB4_D16", "HB4_D21", "HB4_D30"]
+    cell_types = ["Neurectoderm"] * (n_cells - 5) + ["Unknown proliferating cells"] * 5
+    obs = pd.DataFrame(
+        {
+            "orig.ident": [timepoints[i % len(timepoints)] for i in range(n_cells)],
+            "class3": cell_types,
+            "S.Score": rng.random(n_cells),
+            "G2M.Score": rng.random(n_cells),
+        },
+        index=[f"cell_{i}" for i in range(n_cells)],
+    )
+    # Add POU5F1 as a named gene so root selection is exercised
+    var = pd.DataFrame(index=[f"gene_{i}" for i in range(n_genes - 1)] + ["POU5F1"])
+    return sc.AnnData(X=X, obs=obs, var=var)
+
+
+# --- exclude_proliferating ---
+
+def test_exclude_proliferating_counts():
+    adata = _make_diffusion_adata(n_cells=60)
+    traj, prolif = exclude_proliferating(adata, cell_type_key="class3")
+    assert traj.n_obs == 55
+    assert prolif.n_obs == 5
+    assert traj.n_obs + prolif.n_obs == adata.n_obs
+
+
+def test_exclude_proliferating_no_prolif_in_traj():
+    adata = _make_diffusion_adata(n_cells=60)
+    traj, _ = exclude_proliferating(adata, cell_type_key="class3")
+    assert "Unknown proliferating cells" not in traj.obs["class3"].values
+
+
+def test_exclude_proliferating_cell_ids_partition():
+    adata = _make_diffusion_adata(n_cells=60)
+    traj, prolif = exclude_proliferating(adata, cell_type_key="class3")
+    all_ids = set(traj.obs_names) | set(prolif.obs_names)
+    assert all_ids == set(adata.obs_names)
+
+
+# --- select_hvgs ---
+
+def test_select_hvgs_gene_count():
+    adata = _make_diffusion_adata()
+    traj, _ = exclude_proliferating(adata)
+    result = select_hvgs(traj, n_top_genes=20)
+    assert result.n_vars == 20
+
+
+def test_select_hvgs_preserves_cell_count():
+    adata = _make_diffusion_adata()
+    traj, _ = exclude_proliferating(adata)
+    n_before = traj.n_obs
+    result = select_hvgs(traj, n_top_genes=20)
+    assert result.n_obs == n_before
+
+
+# --- regress_cell_cycle ---
+
+def test_regress_cell_cycle_runs_with_scores():
+    adata = _make_diffusion_adata()
+    traj, _ = exclude_proliferating(adata)
+    traj = select_hvgs(traj, n_top_genes=20)
+    sc.pp.scale(traj)
+    # Should not raise
+    regress_cell_cycle(traj)
+
+
+def test_regress_cell_cycle_warns_without_scores():
+    adata = _make_diffusion_adata()
+    traj, _ = exclude_proliferating(adata)
+    traj = select_hvgs(traj, n_top_genes=20)
+    traj.obs.drop(columns=["S.Score", "G2M.Score"], inplace=True)
+    with pytest.warns(UserWarning):
+        regress_cell_cycle(traj)
+
+
+# --- select_root ---
+
+def test_select_root_sets_iroot():
+    adata = _make_diffusion_adata()
+    traj, _ = exclude_proliferating(adata)
+    traj = select_hvgs(traj, n_top_genes=20)
+    sc.pp.scale(traj)
+    sc.tl.pca(traj, n_comps=5)
+    sc.pp.neighbors(traj, n_neighbors=5, n_pcs=5)
+    sc.tl.diffmap(traj, n_comps=5)
+    traj = select_root(traj)
+    assert "iroot" in traj.uns
+    assert isinstance(traj.uns["iroot"], (int, np.integer))
+
+
+def test_select_root_iroot_is_d5_cell():
+    adata = _make_diffusion_adata()
+    traj, _ = exclude_proliferating(adata)
+    traj = select_hvgs(traj, n_top_genes=20)
+    sc.pp.scale(traj)
+    sc.tl.pca(traj, n_comps=5)
+    sc.pp.neighbors(traj, n_neighbors=5, n_pcs=5)
+    sc.tl.diffmap(traj, n_comps=5)
+    traj = select_root(traj)
+    root_day = traj.obs["orig.ident"].iloc[traj.uns["iroot"]]
+    assert root_day == "HB4_D5"
+
+
+def test_select_root_fallback_warns_without_pou5f1():
+    adata = _make_diffusion_adata()
+    traj, _ = exclude_proliferating(adata)
+    # Replace POU5F1 gene name so it's absent
+    traj.var.index = [f"gene_{i}" for i in range(traj.n_vars)]
+    traj = select_hvgs(traj, n_top_genes=20)
+    sc.pp.scale(traj)
+    sc.tl.pca(traj, n_comps=5)
+    sc.pp.neighbors(traj, n_neighbors=5, n_pcs=5)
+    sc.tl.diffmap(traj, n_comps=5)
+    with pytest.warns(UserWarning, match="POU5F1 not found"):
+        traj = select_root(traj)
+    assert "iroot" in traj.uns
+
+
+# --- compute_dpt (rank transform) ---
+
+def _run_to_dpt(adata):
+    traj, _ = exclude_proliferating(adata)
+    traj = select_hvgs(traj, n_top_genes=20)
+    sc.pp.scale(traj)
+    sc.tl.pca(traj, n_comps=5)
+    sc.pp.neighbors(traj, n_neighbors=5, n_pcs=5)
+    sc.tl.diffmap(traj, n_comps=5)
+    traj = select_root(traj)
+    return compute_dpt(traj)
+
+
+def test_compute_dpt_pseudotime_in_unit_interval():
+    adata = _make_diffusion_adata()
+    traj = _run_to_dpt(adata)
+    pt = traj.obs["pseudotime"]
+    assert (pt > 0.0).all() and (pt <= 1.0).all()
+
+
+def test_compute_dpt_pseudotime_no_nan():
+    adata = _make_diffusion_adata()
+    traj = _run_to_dpt(adata)
+    assert not traj.obs["pseudotime"].isna().any()
+
+
+def test_compute_dpt_rank_transform_is_monotone_with_raw():
+    """Rank-transformed pseudotime must preserve the ordering of raw DPT."""
+    adata = _make_diffusion_adata()
+    traj = _run_to_dpt(adata)
+    raw  = traj.obs["dpt_pseudotime"].rank()
+    ranked = traj.obs["pseudotime"].rank()
+    assert raw.corr(ranked) == pytest.approx(1.0, abs=1e-6)
+
+
+# --- assign_prolif_pseudotime ---
+
+def test_assign_prolif_pseudotime_all_assigned():
+    adata = _make_diffusion_adata()
+    traj = _run_to_dpt(adata)
+    _, prolif = exclude_proliferating(adata)
+    prolif = assign_prolif_pseudotime(traj, prolif)
+    assert not prolif.obs["pseudotime"].isna().any()
+
+
+def test_assign_prolif_pseudotime_values_in_unit_interval():
+    adata = _make_diffusion_adata()
+    traj = _run_to_dpt(adata)
+    _, prolif = exclude_proliferating(adata)
+    prolif = assign_prolif_pseudotime(traj, prolif)
+    pt = prolif.obs["pseudotime"]
+    assert (pt > 0.0).all() and (pt <= 1.0).all()
+
+
+def test_assign_prolif_pseudotime_empty_prolif_returns_unchanged():
+    adata = _make_diffusion_adata()
+    traj = _run_to_dpt(adata)
+    empty_prolif = adata[:0].copy()
+    result = assign_prolif_pseudotime(traj, empty_prolif)
+    assert result.n_obs == 0

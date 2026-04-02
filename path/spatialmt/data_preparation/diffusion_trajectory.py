@@ -310,19 +310,22 @@ def plot_raw_vs_ranked(adata_traj: sc.AnnData, fig_dir) -> None:
 # ---------------------------------------------------------------------------
 
 def compute_diffusion_pseudotime(
-    h5ad_path,
+    adata: sc.AnnData,
     cell_type_key: str = "class3",
     n_top_genes: int = 2000,
     n_pcs: int = 10,
     n_neighbors: int = 20,
 ) -> pd.Series:
     """
-    Full diffusion pseudotime pipeline.
+    Full diffusion pseudotime pipeline on a log-normalised AnnData.
+
+    The caller (data_prep.py) is responsible for loading the raw h5ad and
+    applying normalize_total + log1p before passing adata in here.
 
     Parameters
     ----------
-    h5ad_path : path-like
-        Path to the raw (or log-normalised) h5ad file.
+    adata : AnnData
+        Log-normalised AnnData (normalize_total + log1p already applied).
     cell_type_key : str
         obs column for cell type labels.
     n_top_genes : int
@@ -339,13 +342,8 @@ def compute_diffusion_pseudotime(
         for all cells (including post-hoc assigned proliferating cells).
         Named "pseudotime".
     """
-    print("── Loading data ──")
-    adata = sc.read_h5ad(h5ad_path)
-    print(f"Loaded: {adata.n_obs} cells × {adata.n_vars} genes")
-
-    print("\n── Normalising ──")
-    sc.pp.normalize_total(adata, target_sum=1e4)
-    sc.pp.log1p(adata)
+    print(f"Input: {adata.n_obs} cells × {adata.n_vars} genes")
+    adata = adata.copy()
 
     print("\n── Excluding proliferating cells ──")
     adata_traj, adata_prolif = exclude_proliferating(adata, cell_type_key)
