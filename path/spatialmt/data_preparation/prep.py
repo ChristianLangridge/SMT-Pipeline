@@ -115,7 +115,7 @@ def generate_pseudotime_labels(
     diffusion pseudotime. See TDD v1.2.0 §S3.
 
     Assign a linearly scaled pseudotime value to each cell based on its
-    ``orig.ident`` timepoint string (e.g. ``"HB4_D7"``).
+    ``orig.ident`` timepoint string "HB4_D5".
 
     Day numbers are parsed from the trailing integer in each label.
     ``min_label`` maps to 0.0 and ``max_label`` maps to 1.0; all other
@@ -191,27 +191,22 @@ class PreparedData:
 # ---------------------------------------------------------------------------
 
 def prepare_dataset(
-    h5ad_path,
+    adata: sc.AnnData,
     cell_type_key: str = "cell_type",
     n_top_genes: int = 2000,
     hvg_flavor: str = "seurat",
-) -> dict:
+) -> "PreparedData":
     """
-    Full preprocessing pipeline: load → extract → HVG filter.
+    HVG selection + feature extraction on a log-normalised AnnData.
+
+    The caller (data_prep.py) is responsible for loading the raw h5ad and
+    applying normalize_total + log1p before passing adata in here.
 
     Returns
     -------
-    dict with keys:
-        X           : np.ndarray, shape (n_cells, n_hvgs)
-        cell_labels : pd.Index
-        gene_labels : pd.Index   (HVG subset)
-        y           : pd.Series  (cell-type labels)
+    PreparedData
     """
-    adata = load_h5ad(h5ad_path)
     check_memory_feasibility(adata.n_obs, adata.n_vars, n_top_genes)
-
-    sc.pp.normalize_total(adata, target_sum=1e4)
-    sc.pp.log1p(adata)
 
     adata_hvg = select_highly_variable_genes(adata, n_top_genes=n_top_genes, flavor=hvg_flavor)
 
