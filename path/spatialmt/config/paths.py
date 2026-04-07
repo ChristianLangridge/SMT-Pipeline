@@ -161,6 +161,9 @@ class Paths:
     
     # --- Validation He et al. 2022 GLI3-KO sc-RNA-seq (unfiltered) -------------------------------------------
     unfiltered_GLI3_ko_tpm  = Dirs.GLI3_ko_data_anndata / "GLI3_ko.h5ad"
+
+    # --- CSS embedding produced by css_pseudotime.R (input to compute_dpt_from_css_embedding) ---
+    css_embedding = Dirs.model_data_ml / "css_embedding.csv"
     
 
 # ---------------------------------------------------------------------------

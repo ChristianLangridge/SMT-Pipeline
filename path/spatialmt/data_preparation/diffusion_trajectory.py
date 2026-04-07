@@ -159,39 +159,49 @@ def compute_dpt(adata: sc.AnnData, n_dcs: int = 10) -> sc.AnnData:
 def assign_prolif_pseudotime(
     adata_traj: sc.AnnData,
     adata_prolif: sc.AnnData,
+    prolif_embedding: np.ndarray | None = None,
 ) -> sc.AnnData:
     """
     Assign pseudotime to excluded proliferating cells via nearest neighbour
     in PCA space (fitted on trajectory cells).
+
+    Parameters
+    ----------
+    prolif_embedding : optional pre-computed embedding for prolif cells (n_prolif × n_dims).
+        When provided (e.g. CSS embedding), skip the gene-space projection step.
+        Must be aligned to adata_prolif row order.
     """
     if adata_prolif.n_obs == 0:
         return adata_prolif
 
     print("Assigning pseudotime to proliferating cells via NN in PCA space...")
 
-    # Re-use the same HVGs as the trajectory adata
-    shared_genes = adata_traj.var_names.intersection(adata_prolif.var_names)
-    traj_pca  = adata_traj.obsm["X_pca"]
+    traj_pca = adata_traj.obsm["X_pca"]
 
-    # Project prolif cells onto the same gene space, then scale using traj stats
-    prolif_X = adata_prolif[:, shared_genes].X
-    if hasattr(prolif_X, "toarray"):
-        prolif_X = prolif_X.toarray()
+    if prolif_embedding is not None:
+        # CSS path: embedding already in the same space as traj X_pca
+        prolif_pca = prolif_embedding.astype(np.float32)
+    else:
+        # Standard PCA path: project scaled gene expression through stored loadings
+        shared_genes = adata_traj.var_names.intersection(adata_prolif.var_names)
 
-    traj_X = adata_traj[:, shared_genes].X
-    if hasattr(traj_X, "toarray"):
-        traj_X = traj_X.toarray()
+        prolif_X = adata_prolif[:, shared_genes].X
+        if hasattr(prolif_X, "toarray"):
+            prolif_X = prolif_X.toarray()
 
-    mean = traj_X.mean(axis=0)
-    std  = traj_X.std(axis=0)
-    std[std == 0] = 1.0
-    prolif_scaled = (prolif_X - mean) / std
-    prolif_scaled = np.clip(prolif_scaled, -10, 10)
+        traj_X = adata_traj[:, shared_genes].X
+        if hasattr(traj_X, "toarray"):
+            traj_X = traj_X.toarray()
 
-    # Fit NN on trajectory PCA, approximate prolif PCA by projecting scaled data
-    pca_components = adata_traj.varm["PCs"]  # (n_hvgs, n_comps)
-    shared_idx = [list(adata_traj.var_names).index(g) for g in shared_genes]
-    prolif_pca = prolif_scaled @ pca_components[shared_idx, :]
+        mean = traj_X.mean(axis=0)
+        std  = traj_X.std(axis=0)
+        std[std == 0] = 1.0
+        prolif_scaled = (prolif_X - mean) / std
+        prolif_scaled = np.clip(prolif_scaled, -10, 10)
+
+        pca_components = adata_traj.varm["PCs"]  # (n_hvgs, n_comps)
+        shared_idx = [list(adata_traj.var_names).index(g) for g in shared_genes]
+        prolif_pca = prolif_scaled @ pca_components[shared_idx, :]
 
     nn = NearestNeighbors(n_neighbors=1, metric="euclidean", n_jobs=-1)
     nn.fit(traj_pca)
@@ -420,6 +430,111 @@ def compute_diffusion_pseudotime(
 
     plot_pseudotime_vs_day(adata, fig_dir)
     plot_pseudotime_umap(adata_traj, fig_dir)
+    plot_markers_over_pseudotime(adata_traj, fig_dir)
+    plot_raw_vs_ranked(adata_traj, fig_dir)
+
+    print("\n── Per-day pseudotime summary ──")
+    summary = adata.obs.groupby("orig.ident")["pseudotime"].agg(["mean", "std", "min", "max"])
+    print(summary.to_string())
+
+    pseudotime = adata.obs["pseudotime"].rename("pseudotime")
+    return pseudotime
+
+
+# ---------------------------------------------------------------------------
+# CSS entry point — called from data_prep.py when using CSS embedding from R
+# ---------------------------------------------------------------------------
+
+def compute_dpt_from_css_embedding(
+    adata: sc.AnnData,
+    css_embedding_path,
+    cell_type_key: str = "class3",
+    n_neighbors: int = 20,
+) -> pd.Series:
+    """
+    DPT pipeline using a CSS-PCA-CC embedding produced by css_pseudotime.R.
+
+    Skips HVG selection, cell-cycle regression, scaling, and PCA — those are
+    handled in R via simspec. Injects the CSS embedding directly as X_pca,
+    then runs the existing build_graph → select_root → compute_dpt pipeline.
+
+    Parameters
+    ----------
+    adata : AnnData
+        Log-normalised AnnData (same cells as the CSS embedding).
+    css_embedding_path : path-like
+        Path to css_embedding.csv produced by css_pseudotime.R.
+        Must have a 'cell_id' column and one column per CSS dimension.
+    cell_type_key : str
+        obs column for cell type labels (used to exclude proliferating cells).
+    n_neighbors : int
+        k for neighbour graph.
+
+    Returns
+    -------
+    pd.Series
+        Rank-transformed pseudotime ∈ (0, 1], indexed by cell barcode,
+        for all cells (including post-hoc assigned proliferating cells).
+        Named "pseudotime".
+    """
+    print(f"Loading CSS embedding from {css_embedding_path}...")
+    css_df = pd.read_csv(css_embedding_path, index_col=0)
+    n_dims = css_df.shape[1]
+    print(f"CSS embedding: {css_df.shape[0]} cells × {n_dims} dimensions")
+
+    # Align adata cell order to CSS embedding
+    shared = adata.obs_names.intersection(css_df.index)
+    if len(shared) < len(adata.obs_names):
+        warnings.warn(
+            f"{len(adata.obs_names) - len(shared)} cells in adata not found "
+            f"in CSS embedding — subsetting to shared cells"
+        )
+    adata = adata[shared].copy()
+    css_df = css_df.loc[shared]
+
+    print(f"Input: {adata.n_obs} cells × {adata.n_vars} genes")
+    adata = adata.copy()
+
+    print("\n── Excluding proliferating cells ──")
+    adata_traj, adata_prolif = exclude_proliferating(adata, cell_type_key)
+
+    # Inject CSS embedding as X_pca so build_graph uses it for neighbours
+    traj_css = css_df.loc[adata_traj.obs_names].values.astype(np.float32)
+    adata_traj.obsm["X_pca"] = traj_css
+
+    print(f"\n── Neighbour graph + diffusion map (CSS, k={n_neighbors}) ──")
+    sc.pp.neighbors(adata_traj, n_neighbors=n_neighbors, use_rep="X_pca")
+    sc.tl.diffmap(adata_traj, n_comps=15)
+    print(f"Neighbours: k={n_neighbors}, use_rep=X_pca (CSS) | Diffusion map: 15 components")
+
+    print("\n── Root cell selection ──")
+    adata_traj = select_root(adata_traj)
+
+    print("\n── DPT + rank transform ──")
+    adata_traj = compute_dpt(adata_traj)
+
+    print("\n── Post-hoc pseudotime for proliferating cells ──")
+    prolif_css = css_df.loc[adata_prolif.obs_names].values.astype(np.float32) if adata_prolif.n_obs > 0 else None
+    adata_prolif = assign_prolif_pseudotime(adata_traj, adata_prolif, prolif_embedding=prolif_css)
+
+    print("\n── Saving full AnnData ──")
+    merge_and_save(adata_traj, adata_prolif, adata)
+
+    print("\n── Validation plots ──")
+    fig_dir = Dirs.results / "figures" / "pseudotime_css"
+    fig_dir.mkdir(parents=True, exist_ok=True)
+
+    full_pseudotime = pd.concat([
+        adata_traj.obs[["pseudotime"]],
+        adata_prolif.obs[["pseudotime"]],
+    ])
+    adata.obs["pseudotime"]     = full_pseudotime["pseudotime"]
+    adata.obs["dpt_pseudotime"] = pd.concat([
+        adata_traj.obs[["dpt_pseudotime"]],
+        adata_prolif.obs[["dpt_pseudotime"]],
+    ])["dpt_pseudotime"]
+
+    plot_pseudotime_vs_day(adata, fig_dir)
     plot_markers_over_pseudotime(adata_traj, fig_dir)
     plot_raw_vs_ranked(adata_traj, fig_dir)
 

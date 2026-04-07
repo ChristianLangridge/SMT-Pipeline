@@ -1,6 +1,6 @@
 from spatialmt.data_preparation.prep import prepare_dataset, load_h5ad
-from spatialmt.data_preparation.diffusion_trajectory import compute_diffusion_pseudotime
-from spatialmt.config.paths import Dirs, setup_output_dirs, validate_raw_inputs
+from spatialmt.data_preparation.diffusion_trajectory import compute_dpt_from_css_embedding
+from spatialmt.config.paths import Dirs, Paths, setup_output_dirs, validate_raw_inputs
 import numpy as np
 import pandas as pd
 import scanpy as sc
@@ -28,8 +28,12 @@ if __name__ == "__main__":
     gene_labels = dataset.gene_labels
     y = dataset.y
 
-    # Diffusion pseudotime on the same normalised adata
-    pseudotime = compute_diffusion_pseudotime(adata, cell_type_key="class3")
+    # Diffusion pseudotime using CSS embedding from css_pseudotime.R
+    pseudotime = compute_dpt_from_css_embedding(
+        adata,
+        css_embedding_path=Paths.css_embedding,
+        cell_type_key="class3",
+    )
     pseudotime = pseudotime.reindex(cell_labels)
 
     print(f"\nExpression matrix : {X.shape}  (cells x HVGs)")
