@@ -101,57 +101,6 @@ def select_highly_variable_genes(
 
 
 # ---------------------------------------------------------------------------
-# Pseudotime labelling
-# ---------------------------------------------------------------------------
-
-
-def generate_pseudotime_labels(
-    orig_ident: pd.Series,
-    min_label: str = "HB4_D5",
-    max_label: str = "HB4_D30",
-) -> pd.Series:
-    """
-    Scaffold pseudotime — linearly scaled collection day. Will be replaced by
-    diffusion pseudotime. See TDD v1.2.0 §S3.
-
-    Assign a linearly scaled pseudotime value to each cell based on its
-    ``orig.ident`` timepoint string "HB4_D5".
-
-    Day numbers are parsed from the trailing integer in each label.
-    ``min_label`` maps to 0.0 and ``max_label`` maps to 1.0; all other
-    recognised ``HB4_D{N}`` values are scaled proportionally.
-
-    Parameters
-    ----------
-    orig_ident : pd.Series
-        Per-cell timepoint strings, e.g. from ``adata.obs["orig.ident"]``.
-    min_label : str
-        The timepoint string that should map to 0.0.
-    max_label : str
-        The timepoint string that should map to 1.0.
-
-    Returns
-    -------
-    pd.Series
-        Float pseudotime values in [0, 1], named ``"pseudotime"``.
-        Cells whose ``orig_ident`` cannot be parsed receive ``NaN``.
-    """
-    def _parse_day(label: str) -> float:
-        parts = str(label).split("_D")
-        if len(parts) == 2 and parts[1].isdigit():
-            return float(parts[1])
-        return float("nan")
-
-    days = orig_ident.astype(str).map(_parse_day)
-    min_day = _parse_day(min_label)
-    max_day = _parse_day(max_label)
-
-    pseudotime = (days - min_day) / (max_day - min_day)
-    pseudotime.name = "pseudotime"
-    return pseudotime
-
-
-# ---------------------------------------------------------------------------
 # Memory pre-check
 # ---------------------------------------------------------------------------
 
