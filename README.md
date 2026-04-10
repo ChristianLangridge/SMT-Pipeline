@@ -1,5 +1,5 @@
 # TabGRN
-Integration of sc-RNA-seq datasets with TFM models for cell differentiation prediction tasks. 
+Integration of sc-RNA-seq data with TFM models for cell differentiation prediction tasks. 
 
 ***Joint-rotational project at Queen Mary University London and University College London Dr. Julien Gautrot, Dr. Yanlan Mao and Dr. Isabel Palacios***
 
