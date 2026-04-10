@@ -229,8 +229,8 @@ def merge_and_save(adata_traj: sc.AnnData, adata_prolif: sc.AnnData, original: s
         adata_traj.obs[["pseudotime", "dpt_pseudotime"]],
         adata_prolif.obs[["pseudotime", "dpt_pseudotime"]],
     ])
-    original.obs["pseudotime"]     = pseudotime["pseudotime"]
-    original.obs["dpt_pseudotime"] = pseudotime["dpt_pseudotime"]
+    original.obs["rank-transformed-pseudotime"] = pseudotime["pseudotime"]
+    original.obs["raw_pseudotime"]              = pseudotime["dpt_pseudotime"]
 
     out_path = Dirs.model_data_anndata / "neurectoderm_with_pseudotime.h5ad"
     original.write_h5ad(out_path)
@@ -439,7 +439,7 @@ def compute_diffusion_pseudotime(
     summary = adata.obs.groupby("orig.ident")["pseudotime"].agg(["mean", "std", "min", "max"])
     print(summary.to_string())
 
-    pseudotime = adata.obs["pseudotime"].rename("pseudotime")
+    pseudotime = adata.obs["pseudotime"].rename("rank-transformed-pseudotime")
     return pseudotime
 
 
@@ -545,5 +545,5 @@ def compute_dpt_from_css_embedding(
     summary = adata.obs.groupby("orig.ident")["pseudotime"].agg(["mean", "std", "min", "max"])
     print(summary.to_string())
 
-    pseudotime = adata.obs["pseudotime"].rename("pseudotime")
+    pseudotime = adata.obs["pseudotime"].rename("rank-transformed-pseudotime")
     return pseudotime

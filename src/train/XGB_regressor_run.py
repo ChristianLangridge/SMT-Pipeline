@@ -36,7 +36,7 @@ if __name__ == "__main__":
     
     cell_labels = pd.read_csv(data_dir / "cell_labels.csv").squeeze()
     gene_labels = pd.read_csv(data_dir / "gene_labels.csv").squeeze()
-    y = pd.read_csv(data_dir / "pseudotime_labels.csv").squeeze()
+    y = pd.read_csv(data_dir / "diffusion_component_pseudotime_labels.csv").squeeze()
     
     X = pd.DataFrame(
         np.load(data_dir / "expression_matrix.npz")["X"],
