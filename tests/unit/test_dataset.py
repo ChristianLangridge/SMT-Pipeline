@@ -17,7 +17,7 @@ import pandas as pd
 import pytest
 
 from spatialmt.config.experiment import ConfigurationError, DataConfig
-from spatialmt.data.dataset import ProcessedDataset
+from spatialmt.data_preparation2.dataset import ProcessedDataset
 
 K = 8
 
@@ -332,9 +332,5 @@ def test_memory_feasibility_standard_tier_512_genes():
 
 
 # ---------------------------------------------------------------------------
-# from_anndata stub
+# from_anndata — integration tests are in test/test_dataset.py (require anndata/scanpy)
 # ---------------------------------------------------------------------------
-
-def test_from_anndata_raises_not_implemented():
-    with pytest.raises(NotImplementedError):
-        ProcessedDataset.from_anndata("fake.h5ad", config=None)

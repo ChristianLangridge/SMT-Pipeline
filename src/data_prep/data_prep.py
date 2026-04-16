@@ -1,3 +1,8 @@
+# This file is old and redundant aftter the implementation 
+# of the from_anndata class which calls all the same machinery
+
+
+
 from spatialmt.data_preparation.prep import prepare_dataset, load_h5ad
 from spatialmt.data_preparation.diffusion_trajectory import compute_dpt_from_css_embedding
 from spatialmt.config.paths import Dirs, Paths, setup_output_dirs, validate_raw_inputs

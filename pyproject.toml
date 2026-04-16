@@ -28,7 +28,7 @@ dev = [
 where = ["path"]
 
 [tool.pytest.ini_options]
-testpaths = ["test", "tests"]
+testpaths = ["tests"]
 
 # ---------------------------------------------------------------------------
 # After cloning, run once from the project root:

@@ -1,12 +1,12 @@
 """
-spatialmt.data.dataset — ProcessedDataset
+spatialmt.data_preparation2.dataset — ProcessedDataset
 
 Immutable, schema-validated container for one experiment's training data.
 Every downstream component receives this object; raw files are never accessed
 after construction.
 
-Evolving from PreparedData in data_preparation/prep.py into a full dataclass
-wrapper. The primary constructor (from_anndata) is a stub until Phase 2.
+Wraps the output of data_preparation/prep.py extraction functions with schema
+validation, soft label computation, and manifest hashing.
 
 Schema invariants (all checked at construction via _validate):
   - expression.max() < 20.0            guards against raw counts
@@ -19,8 +19,8 @@ Schema invariants (all checked at construction via _validate):
 from __future__ import annotations
 
 import hashlib
+import re
 from dataclasses import dataclass
-from typing import Optional
 
 import numpy as np
 import pandas as pd
@@ -187,24 +187,106 @@ class ProcessedDataset:
             )
 
     # ------------------------------------------------------------------
-    # Primary constructor (stub — Phase 2)
+    # Primary constructor
     # ------------------------------------------------------------------
 
     @classmethod
     def from_anndata(
         cls,
         h5ad_path: str,
-        config: Optional[DataConfig],
+        config: DataConfig,
+        cell_type_key: str = "class3",
+        n_pca_components: int = 50,
     ) -> "ProcessedDataset":
         """
         Load an h5ad file and construct a validated ProcessedDataset.
 
-        This is the primary constructor. Currently a stub — the full
-        implementation (HVG selection, soft label computation, holdout-safe
-        pseudotime assignment) is tracked in Phase 2.
+        The h5ad must already contain 'rank-transformed-pseudotime' in obs
+        (written by compute_dpt_from_css_embedding → merge_and_save).
+        Normalisation (normalize_total + log1p) is applied if X.max() >= 20.
+
+        Parameters
+        ----------
+        h5ad_path : str
+            Path to the h5ad file (typically neurectoderm_with_pseudotime.h5ad).
+        config : DataConfig
+            Provides max_genes (HVG count) and soft-label hyperparameters.
+        cell_type_key : str
+            obs column for cell-type annotations (default 'class3').
+        n_pca_components : int
+            PCA dimensions used for soft-label centroid distances.
         """
-        raise NotImplementedError(
-            "ProcessedDataset.from_anndata is not yet implemented. "
-            "Use the dataclass constructor directly with pre-processed arrays, "
-            "or wait for Phase 2."
+        import scanpy as sc
+        from sklearn.decomposition import PCA
+        from spatialmt.data_preparation.prep import (
+            load_h5ad,
+            extract_expression_matrix,
+            extract_cell_labels,
+            extract_gene_labels,
+            extract_cell_type_labels,
+            check_memory_feasibility,
+            select_highly_variable_genes,
+        )
+
+        # 1. Load and normalise
+        adata = load_h5ad(h5ad_path)
+        xmax = adata.X.max() if not hasattr(adata.X, "toarray") else adata.X.toarray().max()
+        if xmax >= 20.0:
+            sc.pp.normalize_total(adata, target_sum=1e4)
+            sc.pp.log1p(adata)
+
+        check_memory_feasibility(adata.n_obs, adata.n_vars, config.max_genes)
+
+        # 2. HVG selection on all cells (day-11 holdout is ContextSampler's concern)
+        adata_hvg = select_highly_variable_genes(
+            adata, n_top_genes=config.max_genes, flavor="seurat"
+        )
+
+        # 3. Extract arrays
+        X = extract_expression_matrix(adata_hvg)
+        cell_ids = list(extract_cell_labels(adata_hvg))
+        gene_names = list(extract_gene_labels(adata_hvg))
+        cell_type_labels = extract_cell_type_labels(adata_hvg, cell_type_key=cell_type_key)
+        orig_ident = adata_hvg.obs["orig.ident"].copy()
+
+        # 4. Parse collection_day from orig_ident (e.g. "HB4_D11" → 11)
+        def _parse_day(s: str) -> int:
+            m = re.search(r"D(\d+)$", s)
+            if m is None:
+                raise ValueError(f"Cannot parse collection day from orig_ident value: {s!r}")
+            return int(m.group(1))
+
+        collection_day = orig_ident.map(_parse_day).values.astype(np.int32)
+
+        # 5. Load pseudotime from adata.obs (written by merge_and_save)
+        pt_col = "rank-transformed-pseudotime"
+        if pt_col not in adata.obs.columns:
+            raise ValueError(
+                f"'{pt_col}' not found in adata.obs. "
+                "Run compute_dpt_from_css_embedding first, which calls merge_and_save "
+                "to write pseudotime into the h5ad."
+            )
+        pseudotime = adata.obs.loc[cell_ids, pt_col].values.astype(np.float32)
+
+        # 6. Soft labels: PCA → distance-to-centroid softmax
+        n_pcs = min(n_pca_components, X.shape[1], X.shape[0] - 1)
+        expression_pca = PCA(n_components=n_pcs).fit_transform(X).astype(np.float32)
+
+        categories = sorted(cell_type_labels.unique())
+        cluster_ids = cell_type_labels.map(
+            {cat: i for i, cat in enumerate(categories)}
+        ).values.astype(int)
+
+        soft_labels = cls._compute_soft_labels(expression_pca, cluster_ids, config)
+
+        return cls(
+            expression=X,
+            gene_names=gene_names,
+            pseudotime=pseudotime,
+            collection_day=collection_day,
+            cell_ids=cell_ids,
+            cell_type_labels=cell_type_labels,
+            orig_ident=orig_ident,
+            soft_labels=soft_labels,
+            manifest_hash=cls._compute_manifest_hash(gene_names),
         )

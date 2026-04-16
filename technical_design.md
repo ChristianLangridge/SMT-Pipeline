@@ -1,12 +1,19 @@
 # Technical Design Document
 ## TabGRN-ICL: Tabular Foundation Model for Dynamic GRN Inference
 
-**Version:** 1.2.0  
+**Version:** 1.3.0  
 **Status:** Rotation Scope Active · Dual-Head · Full Trajectory  
 **Project:** Joint rotation — Queen Mary University London / University College London  
 **Supervisors:** Dr. Julien Gautrot · Dr. Yanlan Mao · Dr. Isabel Palacios  
 **Author:** Christian Langridge  
-**Last Updated:** March 2026
+**Last Updated:** April 2026
+
+**Changelog v1.3.0**
+- §2: Directory structure updated to reflect actual layout (`data_preparation/`, `data_preparation2/`); test folder structure updated post-merge
+- §3.2: File path corrected to `data_preparation2/dataset.py`; `from_anndata` marked fully implemented (not a stub); pseudotime field updated to reflect diffusion pseudotime computed
+- §6.1: Import paths corrected to `spatialmt.data_preparation2.dataset`
+- §8.2a: Test file locations updated to `tests/integration/`; `test_dataset.py` integration suite added
+- §9.3: Week 6 milestone marked complete
 
 **Changelog v1.2.0**
 - §1: Trajectory extended to days 5–30; both heads active in rotation; pseudotime recomputed; perturbation strategy revised
@@ -104,21 +111,21 @@ TabGRN/
 │       │   ├── paths.py                # Filesystem path resolution (env var + sentinel walk)
 │       │   └── experiment.py           # ExperimentConfig + all sub-configs
 │       │
-│       ├── data/
+│       ├── data_preparation/           # R/Python data pipeline (prep.py, diffusion_trajectory.py)
 │       │   ├── __init__.py
-│       │   ├── dataset.py              # ProcessedDataset — schema-validated container
-│       │   ├── manifest.py             # FeatureManifest — versioned gene set
-│       │   └── loaders/
-│       │       ├── __init__.py
-│       │       ├── jain_loader.py      # Loads Jain et al. 2025 TPM files
-│       │       └── fleck_loader.py     # Loads Fleck et al. 2022 (Phase 7)
+│       │   ├── prep.py                 # HVG selection, expression extraction, PreparedData
+│       │   └── diffusion_trajectory.py # CSS integration, diffusion pseudotime, merge_and_save
 │       │
-│       ├── context/
+│       ├── data_preparation2/          # Schema-validated container — handoff to model pipeline
 │       │   ├── __init__.py
-│       │   ├── sampler.py              # ContextSampler — 5-bin pseudotime stratification
+│       │   └── dataset.py              # ProcessedDataset — from_anndata, soft labels, validation
+│       │
+│       ├── context/                    # [planned — ContextSampler, CellTableBuilder]
+│       │   ├── __init__.py
+│       │   ├── sampler.py              # ContextSampler — 6-bin pseudotime stratification
 │       │   └── builder.py              # CellTableBuilder — unified matrix construction
 │       │
-│       ├── model/
+│       ├── model/                      # [planned — TabICLRegressor, heads, baselines]
 │       │   ├── __init__.py
 │       │   ├── tabicl.py               # TabICLRegressor — main model wrapper
 │       │   ├── heads/
@@ -135,21 +142,21 @@ TabGRN/
 │       │       ├── no_icl_baseline.py  # Single-cell, no context [Phase 6]
 │       │       └── scratch_baseline.py # TabICLv2 architecture, no pretrain [Phase 6]
 │       │
-│       ├── training/
+│       ├── training/                   # [planned]
 │       │   ├── __init__.py
 │       │   ├── trainer.py              # Training loop — normalised loss, warmup, callbacks
 │       │   ├── callbacks.py            # AttentionScorer callback, checkpoint saver
 │       │   ├── scheduler.py            # Warmup + cosine LR scheduler
 │       │   └── loss.py                 # MSELoss, DirichletNLL, NormalisedDualLoss
 │       │
-│       ├── explainability/
+│       ├── explainability/             # [planned]
 │       │   ├── __init__.py
 │       │   ├── protocols.py            # GeneScorer protocol + GeneScoreMap type alias
 │       │   ├── scorers.py              # AttentionScorer (online) + SHAPScorer (offline)
 │       │   ├── report.py               # ExplainabilityReport + disagreement taxonomy
 │       │   └── perturbation.py         # PerturbationEngine — in-silico knockouts
 │       │
-│       └── evaluation/
+│       └── evaluation/                 # [planned]
 │           ├── __init__.py
 │           ├── metrics.py              # mae_day11, attention_entropy, top20_bio_overlap
 │           ├── benchmark.py            # Five-model benchmark suite
@@ -165,22 +172,24 @@ TabGRN/
 │
 └── tests/
     ├── conftest.py                     # Fixtures: debug_config, synthetic_dataset,
-    │                                   # toy_model, synthetic_attention_weights,
-    │                                   # correlated_expression,
     │                                   # synthetic_dataset_with_labels
+    │                                   # [planned: toy_model, synthetic_attention_weights,
+    │                                   #  correlated_expression]
     ├── unit/
-    │   ├── test_dataset.py             # Schema contract tests (12 assertions)
-    │   ├── test_experiment_config.py   # Serialisation, hash, preset tests
-    │   ├── test_context_sampler.py     # Bin assignment, sparse bin warning
-    │   ├── test_cell_table_builder.py  # Shape, perturbation mask, missing gene warning
-    │   ├── test_attention_scorer.py    # Layer 1: synthetic weights, top gene, sum=1
-    │   └── test_shap_scorer.py         # Locked background, correlated-feature sign stability
-    ├── smoke/
+    │   ├── test_dataset.py             # ProcessedDataset schema contract tests (34 tests) ✓
+    │   ├── test_experiment_config.py   # Serialisation, hash, preset tests ✓
+    │   ├── test_context_sampler.py     # Bin assignment, sparse bin warning [planned]
+    │   ├── test_cell_table_builder.py  # Shape, perturbation mask, missing gene warning [planned]
+    │   ├── test_attention_scorer.py    # Layer 1: synthetic weights, top gene, sum=1 [planned]
+    │   └── test_shap_scorer.py         # Locked background, correlated-feature sign stability [planned]
+    ├── smoke/                          # [planned]
     │   └── test_toy_forward_pass.py    # Layer 2: toy model, shapes, no NaN, (0,1) range
     ├── integration/
-    │   ├── test_hold_out_split.py      # Zero intersection, day 11 only in test set
-    │   └── test_wls_perturbation.py    # Two-signal WLS test (skips without checkpoint)
-    └── biological_sanity/
+    │   ├── test_dataset.py             # from_anndata integration tests (18 tests) ✓
+    │   ├── test_prep.py                # prep.py HVG, pseudotime, prepare_dataset tests ✓
+    │   ├── test_hold_out_split.py      # Zero intersection, day 11 only in test set [planned]
+    │   └── test_wls_perturbation.py    # Two-signal WLS test (skips without checkpoint) [planned]
+    └── biological_sanity/              # [planned]
         └── test_sox2_attention.py      # Layer 3: SOX2 in top-20 (manual, post-training)
 ```
 
@@ -220,9 +229,9 @@ ExperimentConfig.no_icl_preset()          # Single cell input [Phase 6]
 ---
 
 ### 3.2 `ProcessedDataset`
-**File:** `path/spatialmt/data/dataset.py` (evolving from `path/spatialmt/data_preparation/prep.py`)
+**File:** `path/spatialmt/data_preparation2/dataset.py`
 
-**Purpose:** Immutable, schema-validated container for one experiment's training data. Currently evolving from extraction functions in `prep.py` into a full dataclass wrapper (`PreparedData` → `ProcessedDataset`). Every downstream component receives this object; raw files are never accessed after construction.
+**Purpose:** Immutable, schema-validated container for one experiment's training data. Wraps the output of `data_preparation/prep.py` extraction functions with schema validation, soft label computation, and manifest hashing. Every downstream component receives this object; raw files are never accessed after construction.
 
 **Fields:**
 
@@ -230,7 +239,7 @@ ExperimentConfig.no_icl_preset()          # Single cell input [Phase 6]
 |---|---|---|---|
 | `expression` | `(n_cells, n_genes)` | `np.float32` | log-normalised (CP10k+log1p from Zenodo), validated max < 20.0 |
 | `gene_names` | `(n_genes,)` | `list[str]` | HVG names in column order (flavor=`seurat`) |
-| `pseudotime` | `(n_cells,)` | `np.float32` | Scaffold: linearly scaled collection day. Replacement: diffusion pseudotime ∈ [0, 1] |
+| `pseudotime` | `(n_cells,)` | `np.float32` | Diffusion pseudotime ∈ [0, 1] — recomputed via CSS + DPT on full trajectory (days 5–30); loaded from `adata.obs["rank-transformed-pseudotime"]` |
 | `collection_day` | `(n_cells,)` | `np.int32` | ∈ {5, 7, 11, 16, 21, 30} |
 | `cell_ids` | `(n_cells,)` | `list[str]` | Unique identifiers |
 | `cell_type_labels` | `(n_cells,)` | `pd.Series` | `class3` annotations — 8 states |
@@ -246,7 +255,7 @@ ExperimentConfig.no_icl_preset()          # Single cell input [Phase 6]
 **Key methods:**
 
 ```python
-ProcessedDataset.from_anndata(h5ad_path, config)  # Primary constructor (evolving)
+ProcessedDataset.from_anndata(h5ad_path, config)  # Primary constructor — fully implemented
 ProcessedDataset._validate(instance)               # Schema assertion — called inside constructor
 ProcessedDataset._check_memory_feasibility()       # Warns before OOM
 ProcessedDataset._compute_soft_labels()            # Distance-to-centroid softmax, K=8
@@ -262,11 +271,11 @@ ProcessedDataset.save(path) / .load(path)          # Atomic write with manifest 
 - `X.shape[0] == len(cell_ids) == len(cell_type_labels) == len(pseudotime)`
 - `X.shape[1] == len(gene_names)`
 
-**Data-state guard:** HVG selection warns if `adata.X.max() > 20.0` with `seurat` flavor or `< 20.0` with `seurat_v3` flavor.
+**Auto-normalisation:** `from_anndata` auto-applies `normalize_total(target_sum=1e4)` + `log1p` if `adata.X.max() >= 20.0`. The `seurat` HVG flavor is always used; raw-count detection relies on the expression max threshold.
 
 **Memory optimisation:** Densification deferred until after HVG selection. Peak: ~314 MB (41k × 2k × float32) instead of ~3.8 GB (41k × 24k × float32).
 
-**Dependencies:** `numpy`, `pandas`, `spatialmt.config.experiment.DataConfig`
+**Dependencies:** `numpy`, `pandas`, `scanpy`, `sklearn.decomposition.PCA`, `spatialmt.config.experiment.DataConfig`, `spatialmt.data_preparation.prep`
 
 ---
 
@@ -764,7 +773,7 @@ def _check_memory_feasibility(n_genes, d_model, batch_size, gpu_memory_bytes):
 
 ```python
 from spatialmt.config.experiment import ExperimentConfig
-from spatialmt.data.dataset import ProcessedDataset
+from spatialmt.data_preparation2.dataset import ProcessedDataset
 from spatialmt.context.sampler import ContextSampler
 from spatialmt.context.builder import CellTableBuilder
 from spatialmt.model.tabicl import TabICLRegressor
@@ -926,22 +935,34 @@ Bio plausibility FAILED
 ```python
 # conftest.py — session-scoped, built once per test run
 
-synthetic_dataset           # 100 cells, 10 genes, day 11 test, K=8 soft_labels
-toy_model                   # TabICLRegressor(n_layers=2, d_model=32, n_genes=10)
-synthetic_attention_weights # (n_heads=2, n_genes=10) — SOX2 boosted to highest weight
-correlated_expression       # GENE_02 and GENE_03 perfectly correlated (SHAP stability)
-synthetic_adata             # AnnData with obs["orig.ident"], obs["cell_type"], sparse/dense X
+# Implemented
+debug_config                    # ExperimentConfig.debug_preset()
+synthetic_dataset               # 100 cells, 10 genes, K=8 soft_labels, diffusion pseudotime
+synthetic_dataset_with_labels   # 120 cells — day-5 cells labelled Neurectoderm
+
+# Planned (added when model layer is implemented)
+toy_model                       # TabICLRegressor(n_layers=2, d_model=32, n_genes=10)
+synthetic_attention_weights     # (n_heads=2, n_genes=10) — SOX2 boosted to highest weight
+correlated_expression           # GENE_02 and GENE_03 perfectly correlated (SHAP stability)
 ```
 
 ### 8.2a Data Preparation Tests
 
-**File:** `test/test_prep.py` — tests for `spatialmt.data_preparation.prep`
+**Files:**
+- `tests/integration/test_prep.py` — tests for `spatialmt.data_preparation.prep` (moved from `test/` in v1.3.0)
+- `tests/integration/test_dataset.py` — 18 integration tests for `ProcessedDataset.from_anndata` (require anndata/scanpy)
 
-Key test groups:
+**`test_prep.py` test groups:**
 - **HVG selection** (8 tests): gene count, copy safety, subset invariant, flavor guard (seurat vs seurat_v3 on normalised/raw data), n_top_genes edge case
 - **Expression matrix validation** (3 tests): NaN/negative/Inf guard documentation
 - **Pseudotime contract** (4 tests): parametrized across all pseudotime functions — output type, name, [0,1] range, length
 - **`prepare_dataset` composition** (3 tests): monkeypatched `load_h5ad`, shape consistency, field completeness
+
+**`test_dataset.py` (integration) test groups:**
+- **Happy path** (6 tests): n_cells, n_genes, expression float32, max < 20.0, pseudotime in [0,1], no NaN
+- **Schema** (5 tests): missing pseudotime column raises, collection_day values and dtype, soft_labels shape/sum/dtype, manifest hash
+- **Auto-normalisation** (2 tests): raw counts input is normalised; already-normalised input is unchanged
+- **Error handling** (5 tests): missing cell_type_key, missing pseudotime obs column, malformed orig_ident
 
 ### 8.3 Critical Tests
 
@@ -1016,17 +1037,17 @@ pytest tests/unit/ tests/smoke/ -v
 
 ### 9.3 Critical Milestones
 
-| Date | Milestone |
-|---|---|
-| Week 2 end (Apr 1) | AnnData inspected — class3 labels, cell counts, day 30 confirmed |
-| Week 4 (Apr 15) | `prep.py` review issues resolved; RED phase tests passing; HVG flavor corrected |
-| Week 5 end (Apr 22) | Scaffold pseudotime integrated; `PreparedData` dataclass green |
-| Week 6 (Apr 29) | Diffusion pseudotime computed (R or scanpy) and validated |
-| Week 7 end (May 6) | **First Myriad GPU job submitted — dual-head — critical gate** |
-| Week 8 (May 13) | Baseline ladder (mean → ridge → XGBoost) complete; comparison table generated |
-| Week 10 (May 27) | Biological plausibility gate — SOX2 in top-20 |
-| Week 11 (Jun 3) | WLS perturbation Signals 1 + 2 + 3 (composition shift) passing |
-| Week 15 (Jul 3) | Rotation report + talk submitted |
+| Date | Milestone | Status |
+|---|---|---|
+| Week 2 end (Apr 1) | AnnData inspected — class3 labels, cell counts, day 30 confirmed | ✓ Complete |
+| Week 4 (Apr 15) | `prep.py` review issues resolved; RED phase tests passing; HVG flavor corrected | ✓ Complete |
+| Week 5 end (Apr 22) | Scaffold pseudotime integrated; `PreparedData` dataclass green | ✓ Complete |
+| Week 6 (Apr 29) | Diffusion pseudotime computed and validated; `ProcessedDataset.from_anndata` implemented and integration-tested | ✓ Complete |
+| Week 7 end (May 6) | **`ContextSampler` + `CellTableBuilder` implemented; first Myriad GPU job submitted — dual-head — critical gate** | In progress |
+| Week 8 (May 13) | Baseline ladder (mean → ridge → XGBoost) complete; comparison table generated | |
+| Week 10 (May 27) | Biological plausibility gate — SOX2 in top-20 | |
+| Week 11 (Jun 3) | WLS perturbation Signals 1 + 2 + 3 (composition shift) passing | |
+| Week 15 (Jul 3) | Rotation report + talk submitted | |
 
 ---
 
@@ -1095,6 +1116,16 @@ Training baselines on the full dataset **removes both leakage concerns** and giv
 | BE2 | Day 11 holdout deferred to TabGRN training phase | Correct holdout requires leakage-free HVG selection and post-hoc pseudotime assignment — infrastructure not needed until TabGRN is implemented |
 | BE3 | `assign_prolif_pseudotime()` reused for day 11 holdout | Pattern already implemented and tested for proliferating cells; generalises directly to day 11 exclusion without new logic |
 
+### Implementation Decisions (v1.3.0)
+
+| # | Decision | Rationale |
+|---|---|---|
+| I1 | `data_preparation2/` as the `ProcessedDataset` package (not `data/`) | Avoided disrupting `data_preparation/` prep.py code during transition; rename deferred until model pipeline is built |
+| I2 | `from_anndata` delegates to `prep.py` functions rather than reimplementing extraction | Extraction functions in prep.py are tested and correct; `from_anndata` adds the schema-validated wrapper layer without duplicating logic |
+| I3 | Day 11 holdout excluded from `from_anndata` | Holdout logic belongs to `ContextSampler` — ICL and baseline pipelines need different split strategies; `ProcessedDataset` carries all cells |
+| I4 | `test/` merged into `tests/integration/` | Single test root; `pyproject.toml` testpaths simplified; prevents silent test discovery gaps |
+| I5 | Diffusion pseudotime loaded from `adata.obs["rank-transformed-pseudotime"]` | Written by `merge_and_save` in `diffusion_trajectory.py`; `from_anndata` raises clearly if the column is absent rather than silently using a scaffold fallback |
+
 ---
 
-*This document reflects all architectural decisions through the scope/baseline/data-prep review sessions (March 2026). The rotation scope (dual-head, regression baseline ladder, WLS/GLI3 perturbation validation) targets July 3rd.*
+*This document reflects all architectural decisions through v1.3.0 (April 2026). The rotation scope (dual-head, regression baseline ladder, WLS/GLI3 perturbation validation) targets July 3rd.*
