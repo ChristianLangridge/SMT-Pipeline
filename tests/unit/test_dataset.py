@@ -1,5 +1,5 @@
 """
-Unit tests for spatialmt.data.dataset.ProcessedDataset.
+Unit tests for spatialmt.data_preparation2.dataset.ProcessedDataset.
 
 Tests are organised into:
   - Construction (valid dataset builds without error)
