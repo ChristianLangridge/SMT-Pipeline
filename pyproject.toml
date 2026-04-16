@@ -21,13 +21,14 @@ dev = [
     "scanpy",
     "anndata",
     "scipy",
+    "psutil",
 ]
 
 [tool.setuptools.packages.find]
 where = ["path"]
 
 [tool.pytest.ini_options]
-testpaths = ["test"]
+testpaths = ["test", "tests"]
 
 # ---------------------------------------------------------------------------
 # After cloning, run once from the project root:
