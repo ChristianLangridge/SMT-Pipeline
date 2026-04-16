@@ -92,7 +92,10 @@ def select_highly_variable_genes(
     adata = adata.copy()
     xmax = adata.X.max() if not hasattr(adata.X, 'toarray') else adata.X.toarray().max()
     if flavor == "seurat" and xmax > 20.0:
-        warnings.warn(f"flavor='seurat' expects log-normalised data but X.max()={xmax:.1f}")
+        raise ValueError(
+            f"flavor='seurat' expects log-normalised data but X.max()={xmax:.1f}. "
+            "Apply sc.pp.normalize_total() + sc.pp.log1p() before calling this function."
+        )
     if flavor == "seurat_v3" and xmax < 20.0:
         warnings.warn(f"flavor='seurat_v3' expects raw counts but X.max()={xmax:.1f}")
     sc.pp.highly_variable_genes(adata, n_top_genes=n_top_genes, flavor=flavor)

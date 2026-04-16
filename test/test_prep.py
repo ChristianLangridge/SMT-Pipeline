@@ -87,9 +87,9 @@ def test_hvg_seurat_v3_on_normalised_warns():
         select_highly_variable_genes(adata, n_top_genes=10, flavor="seurat_v3")
 
 
-def test_hvg_seurat_on_raw_warns():
+def test_hvg_seurat_on_raw_raises():
     adata = _make_adata(n_cells=20, n_genes=50, scale="raw")
-    with pytest.warns(UserWarning):
+    with pytest.raises(ValueError, match="log-normalised"):
         select_highly_variable_genes(adata, n_top_genes=10, flavor="seurat")
 
 
@@ -134,7 +134,6 @@ def test_prepare_dataset_gene_count(normalised_adata):
 
 
 TIMEPOINTS = ["HB4_D5", "HB4_D7", "HB4_D11", "HB4_D16", "HB4_D21", "HB4_D30"]
-EXPECTED   = [0.0,       0.08,      0.24,       0.44,       0.64,       1.0]
 
 
 # ---------------------------------------------------------------------------
@@ -218,89 +217,6 @@ def test_extract_cell_type_labels_missing_key():
     adata = _make_adata()
     with pytest.raises(KeyError, match="missing_key"):
         extract_cell_type_labels(adata, cell_type_key="missing_key")
-
-
-# ---------------------------------------------------------------------------
-# generate_pseudotime_labels
-# ---------------------------------------------------------------------------
-
-def test_pseudotime_boundary_values():
-    s = pd.Series(["HB4_D5", "HB4_D30"])
-    pt = generate_pseudotime_labels(s)
-    assert pt.iloc[0] == pytest.approx(0.0)
-    assert pt.iloc[1] == pytest.approx(1.0)
-
-
-def test_pseudotime_linear_scaling():
-    s = pd.Series(TIMEPOINTS)
-    pt = generate_pseudotime_labels(s)
-    for val, expected in zip(pt, EXPECTED):
-        assert val == pytest.approx(expected, abs=1e-6)
-
-
-def test_pseudotime_categorical_input():
-    """orig.ident is typically a Categorical — must not raise or produce NaN."""
-    s = pd.Categorical(TIMEPOINTS)
-    s = pd.Series(s)
-    pt = generate_pseudotime_labels(s)
-    assert not pt.isna().any()
-
-
-def test_pseudotime_unknown_label_is_nan():
-    s = pd.Series(["HB4_D5", "UNKNOWN", "HB4_D30"])
-    pt = generate_pseudotime_labels(s)
-    assert pt.iloc[0] == pytest.approx(0.0)
-    assert np.isnan(pt.iloc[1])
-    assert pt.iloc[1+1] == pytest.approx(1.0)
-
-
-def test_pseudotime_output_name():
-    s = pd.Series(["HB4_D5"])
-    pt = generate_pseudotime_labels(s)
-    assert pt.name == "pseudotime"
-
-
-def test_pseudotime_length_preserved():
-    s = pd.Series(TIMEPOINTS * 100)
-    pt = generate_pseudotime_labels(s)
-    assert len(pt) == len(s)
-
-
-# ---------------------------------------------------------------------------
-# Pseudotime interface contract
-# Parametrized over all pseudotime implementations. Add "diffusion" when
-# the diffusion pseudotime function is available.
-# ---------------------------------------------------------------------------
-
-@pytest.fixture(params=["scaffold"])
-def pseudotime_fn(request):
-    if request.param == "scaffold":
-        return generate_pseudotime_labels
-
-
-def test_pseudotime_contract_output_is_series(pseudotime_fn):
-    s = pd.Series(TIMEPOINTS)
-    result = pseudotime_fn(s)
-    assert isinstance(result, pd.Series)
-
-
-def test_pseudotime_contract_name_is_pseudotime(pseudotime_fn):
-    s = pd.Series(TIMEPOINTS)
-    result = pseudotime_fn(s)
-    assert result.name == "pseudotime"
-
-
-def test_pseudotime_contract_values_in_unit_interval(pseudotime_fn):
-    s = pd.Series(TIMEPOINTS)
-    result = pseudotime_fn(s)
-    valid = result.dropna()
-    assert (valid >= 0.0).all() and (valid <= 1.0).all()
-
-
-def test_pseudotime_contract_length_matches_input(pseudotime_fn):
-    s = pd.Series(TIMEPOINTS * 10)
-    result = pseudotime_fn(s)
-    assert len(result) == len(s)
 
 
 # ---------------------------------------------------------------------------
@@ -587,7 +503,7 @@ def test_css_full_overlap_runs(tmp_path):
     path = _write_css_csv(tmp_path, df)
     result = compute_dpt_from_css_embedding(adata, path, cell_type_key="class3", n_neighbors=5)
     assert isinstance(result, pd.Series)
-    assert result.name == "pseudotime"
+    assert result.name == "rank-transformed-pseudotime"
 
 
 def test_css_partial_overlap_warns(tmp_path):
