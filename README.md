@@ -1,4 +1,6 @@
 # TabGRN
+
+[![Tests](https://github.com/ChristianLangridge/TabGRN/actions/workflows/tests.yml/badge.svg)](https://github.com/ChristianLangridge/TabGRN/actions/workflows/tests.yml)
 Integration of sc-RNA-seq data with TFM models for cell differentiation prediction tasks. 
 
 ***Joint-rotational project at Queen Mary University London and University College London Dr. Julien Gautrot, Dr. Yanlan Mao and Dr. Isabel Palacios***
