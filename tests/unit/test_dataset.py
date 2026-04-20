@@ -255,17 +255,25 @@ def test_manifest_hash_is_64_char_hex():
 # Soft label computation
 # ---------------------------------------------------------------------------
 
-def test_compute_soft_labels_rows_sum_to_one():
-    rng = np.random.default_rng(0)
-    n_cells, n_pcs, k = 80, 20, K
-    # Tightly clustered centroids — each cluster a separate blob
+def _make_clustered_pca(rng, n_cells, n_pcs, k, spread=0.1, separation=5.0):
+    """Helper: build a tightly clustered PCA matrix and matching cluster_ids."""
     expression_pca = np.zeros((n_cells, n_pcs), dtype=np.float32)
     cluster_ids = np.repeat(np.arange(k), n_cells // k)
     for c in range(k):
         mask = cluster_ids == c
-        expression_pca[mask] = rng.standard_normal((mask.sum(), n_pcs)) * 0.1 + c * 5.0
+        expression_pca[mask] = (
+            rng.standard_normal((mask.sum(), n_pcs)) * spread + c * separation
+        )
+    return expression_pca.astype(np.float32), cluster_ids
+
+
+def test_compute_soft_labels_rows_sum_to_one():
+    rng = np.random.default_rng(0)
+    n_cells, n_pcs, k = 80, 20, K
+    expression_pca, cluster_ids = _make_clustered_pca(rng, n_cells, n_pcs, k)
     config = DataConfig(max_genes=512, n_cell_states=k)
-    soft = ProcessedDataset._compute_soft_labels(expression_pca, cluster_ids, config)
+    centroids = ProcessedDataset._fit_soft_label_centroids(expression_pca, cluster_ids, k)
+    soft = ProcessedDataset._compute_soft_labels(expression_pca, centroids, config)
     assert soft.shape == (n_cells, k)
     assert np.allclose(soft.sum(axis=1), 1.0, atol=1e-5)
 
@@ -275,13 +283,10 @@ def test_compute_soft_labels_dominant_state_for_tight_clusters():
     rng = np.random.default_rng(1)
     n_per_cluster, n_pcs, k = 10, 20, K
     n_cells = n_per_cluster * k
-    expression_pca = np.zeros((n_cells, n_pcs), dtype=np.float32)
-    cluster_ids = np.repeat(np.arange(k), n_per_cluster)
-    for c in range(k):
-        mask = cluster_ids == c
-        expression_pca[mask] = rng.standard_normal((mask.sum(), n_pcs)) * 0.01 + c * 100.0
+    expression_pca, cluster_ids = _make_clustered_pca(rng, n_cells, n_pcs, k, spread=0.01, separation=100.0)
     config = DataConfig(max_genes=512, n_cell_states=k)
-    soft = ProcessedDataset._compute_soft_labels(expression_pca, cluster_ids, config)
+    centroids = ProcessedDataset._fit_soft_label_centroids(expression_pca, cluster_ids, k)
+    soft = ProcessedDataset._compute_soft_labels(expression_pca, centroids, config)
     dominant = soft.argmax(axis=1)
     assert (dominant == cluster_ids).all()
 
@@ -292,8 +297,106 @@ def test_compute_soft_labels_float32_output():
     expression_pca = rng.standard_normal((n_cells, n_pcs)).astype(np.float32)
     cluster_ids = np.arange(n_cells) % k
     config = DataConfig(max_genes=512, n_cell_states=k)
-    soft = ProcessedDataset._compute_soft_labels(expression_pca, cluster_ids, config)
+    centroids = ProcessedDataset._fit_soft_label_centroids(expression_pca, cluster_ids, k)
+    soft = ProcessedDataset._compute_soft_labels(expression_pca, centroids, config)
     assert soft.dtype == np.float32
+
+
+def test_fit_soft_label_centroids_shape():
+    rng = np.random.default_rng(3)
+    n_cells, n_pcs, k = 80, 20, K
+    expression_pca, cluster_ids = _make_clustered_pca(rng, n_cells, n_pcs, k)
+    centroids = ProcessedDataset._fit_soft_label_centroids(expression_pca, cluster_ids, k)
+    assert centroids.shape == (k, n_pcs)
+    assert centroids.dtype == np.float32
+
+
+def test_fit_soft_label_centroids_excludes_withheld_day():
+    """Centroids fitted on training cells must differ from centroids fitted on all cells
+    when the withheld cells occupy a distinct region of PCA space."""
+    rng = np.random.default_rng(4)
+    n_pcs, k = 10, K
+    n_train_per_cluster = 20
+    n_withheld = 10
+
+    # Training cells: tight well-separated clusters
+    n_train = n_train_per_cluster * k
+    train_pca, train_cluster_ids = _make_clustered_pca(
+        rng, n_train, n_pcs, k, spread=0.1, separation=5.0
+    )
+
+    # Withheld (day 11) cells: shifted far from training distribution
+    withheld_pca = rng.standard_normal((n_withheld, n_pcs)).astype(np.float32) + 1000.0
+    withheld_cluster_ids = np.zeros(n_withheld, dtype=int)   # all assigned to cluster 0
+
+    all_pca        = np.vstack([train_pca, withheld_pca])
+    all_cluster_ids = np.concatenate([train_cluster_ids, withheld_cluster_ids])
+
+    centroids_train_only = ProcessedDataset._fit_soft_label_centroids(
+        train_pca, train_cluster_ids, k
+    )
+    centroids_all_cells = ProcessedDataset._fit_soft_label_centroids(
+        all_pca, all_cluster_ids, k
+    )
+
+    # Centroids should differ — withheld cells pull cluster 0 centroid toward 1000
+    assert not np.allclose(centroids_train_only, centroids_all_cells, atol=1.0), (
+        "Centroids fitted on training cells only should differ from centroids "
+        "fitted on all cells when withheld cells occupy a remote region of PCA space."
+    )
+
+
+def test_day11_soft_labels_not_used_in_centroid_estimation():
+    """End-to-end: soft labels for day-11 cells must be identical whether or not
+    day-11 cells are included in centroid fitting — they should only be projected,
+    never used to shift centroids.
+
+    Strategy: compute soft labels two ways:
+      A) fit centroids on training days only, project all cells       (correct)
+      B) fit centroids on all cells including day 11                  (leaky)
+    Assert that day-11 soft labels differ between A and B when day-11 cells are
+    outliers, confirming that the correct path does not let day-11 cells influence
+    the centroid positions that generate their own labels.
+    """
+    rng = np.random.default_rng(5)
+    n_pcs, k = 10, K
+    n_per_cluster = 20
+    n_withheld = 15
+
+    n_train = n_per_cluster * k
+    train_pca, train_cluster_ids = _make_clustered_pca(
+        rng, n_train, n_pcs, k, spread=0.1, separation=5.0
+    )
+
+    # Day-11 cells sit far outside the training distribution
+    withheld_pca = (
+        rng.standard_normal((n_withheld, n_pcs)).astype(np.float32) + 500.0
+    )
+    withheld_cluster_ids = np.zeros(n_withheld, dtype=int)
+
+    all_pca         = np.vstack([train_pca, withheld_pca])
+    all_cluster_ids = np.concatenate([train_cluster_ids, withheld_cluster_ids])
+
+    config = DataConfig(max_genes=512, n_cell_states=k)
+
+    # Correct path — centroids from training cells only
+    centroids_correct = ProcessedDataset._fit_soft_label_centroids(
+        train_pca, train_cluster_ids, k
+    )
+    soft_correct = ProcessedDataset._compute_soft_labels(all_pca, centroids_correct, config)
+    day11_soft_correct = soft_correct[n_train:]
+
+    # Leaky path — centroids from all cells
+    centroids_leaky = ProcessedDataset._fit_soft_label_centroids(
+        all_pca, all_cluster_ids, k
+    )
+    soft_leaky = ProcessedDataset._compute_soft_labels(all_pca, centroids_leaky, config)
+    day11_soft_leaky = soft_leaky[n_train:]
+
+    assert not np.allclose(day11_soft_correct, day11_soft_leaky, atol=1e-3), (
+        "Day-11 soft labels should differ between correct (train-only centroid) "
+        "and leaky (all-cell centroid) paths when day-11 cells are outliers."
+    )
 
 
 # ---------------------------------------------------------------------------

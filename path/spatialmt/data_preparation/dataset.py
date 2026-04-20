@@ -118,47 +118,73 @@ class ProcessedDataset:
         return hashlib.sha256(payload.encode()).hexdigest()
 
     @staticmethod
+    def _fit_soft_label_centroids(
+        train_pca: np.ndarray,
+        train_cluster_ids: np.ndarray,
+        k: int,
+    ) -> np.ndarray:
+        """
+        Estimate cluster centroids from training cells only.
+
+        Must be called exclusively on non-withheld cells (i.e. not day 11)
+        to prevent evaluation label leakage.
+
+        Parameters
+        ----------
+        train_pca : (n_train, n_pcs) float32
+            PCA coordinates of training cells only.
+        train_cluster_ids : (n_train,) int
+            Hard cluster assignment for each training cell (0 … K-1).
+        k : int
+            Number of cell states.
+
+        Returns
+        -------
+        centroids : (K, n_pcs) float32
+        """
+        return np.stack([
+            train_pca[train_cluster_ids == c].mean(axis=0)
+            for c in range(k)
+        ]).astype(np.float32)  # (K, n_pcs)
+
+    @staticmethod
     def _compute_soft_labels(
         expression_pca: np.ndarray,
-        cluster_ids: np.ndarray,
+        centroids: np.ndarray,
         config: DataConfig,
     ) -> np.ndarray:
         """
-        Distance-to-centroid softmax soft labels.
+        Distance-to-centroid softmax soft labels for all cells.
+
+        Centroids must be pre-fitted on training cells only via
+        _fit_soft_label_centroids — never estimated from all cells including
+        the withheld evaluation timepoint.
 
         Parameters
         ----------
         expression_pca : (n_cells, n_pcs) float32
-            Cell coordinates in PCA space.
-        cluster_ids : (n_cells,) int
-            Hard cluster assignment for each cell (0 … K-1).
+            PCA coordinates of ALL cells (training + withheld).
+        centroids : (K, n_pcs) float32
+            Cluster centroids fitted on training cells only.
         config : DataConfig
-            Provides n_cell_states (K) and label_softening_temperature.
+            Provides label_softening_temperature.
 
         Returns
         -------
         soft_labels : (n_cells, K) float32
             Each row sums to 1.0.
         """
-        k = config.n_cell_states
         tau = config.label_softening_temperature
-        n_cells = expression_pca.shape[0]
-
-        # Cluster centroids in PCA space
-        centroids = np.stack([
-            expression_pca[cluster_ids == c].mean(axis=0)
-            for c in range(k)
-        ])  # (K, n_pcs)
 
         # Euclidean distance from each cell to each centroid
-        diff = expression_pca[:, np.newaxis, :] - centroids[np.newaxis, :, :]  # (n, K, pcs)
+        diff      = expression_pca[:, np.newaxis, :] - centroids[np.newaxis, :, :]
         distances = np.linalg.norm(diff, axis=2)  # (n_cells, K)
 
         # Temperature-scaled softmax of negative distances
-        scaled = -distances / tau
-        scaled -= scaled.max(axis=1, keepdims=True)  # numerical stability
-        exp_scaled = np.exp(scaled)
-        soft_labels = exp_scaled / exp_scaled.sum(axis=1, keepdims=True)
+        scaled  = -distances / tau
+        scaled -= scaled.max(axis=1, keepdims=True)   # numerical stability
+        exp_s   = np.exp(scaled)
+        soft_labels = exp_s / exp_s.sum(axis=1, keepdims=True)
 
         return soft_labels.astype(np.float32)
 
@@ -269,15 +295,28 @@ class ProcessedDataset:
         pseudotime = adata.obs.loc[cell_ids, pt_col].values.astype(np.float32)
 
         # 6. Soft labels: PCA → distance-to-centroid softmax
+        #    PCA and centroids are fitted on training cells only (non-withheld
+        #    days) to prevent day-11 evaluation cells from influencing the
+        #    centroid positions used to compute their own soft labels.
         n_pcs = min(n_pca_components, X.shape[1], X.shape[0] - 1)
-        expression_pca = PCA(n_components=n_pcs).fit_transform(X).astype(np.float32)
+
+        train_mask = collection_day != config.test_timepoint  # excludes day 11
+
+        pca = PCA(n_components=n_pcs)
+        pca.fit(X[train_mask])
+        expression_pca = pca.transform(X).astype(np.float32)   # ALL cells
 
         categories = sorted(cell_type_labels.unique())
-        cluster_ids = cell_type_labels.map(
-            {cat: i for i, cat in enumerate(categories)}
-        ).values.astype(int)
+        cat_to_idx = {cat: i for i, cat in enumerate(categories)}
+        cluster_ids = cell_type_labels.map(cat_to_idx).values.astype(int)
 
-        soft_labels = cls._compute_soft_labels(expression_pca, cluster_ids, config)
+        centroids = cls._fit_soft_label_centroids(
+            train_pca=expression_pca[train_mask],
+            train_cluster_ids=cluster_ids[train_mask],
+            k=config.n_cell_states,
+        )
+
+        soft_labels = cls._compute_soft_labels(expression_pca, centroids, config)
 
         return cls(
             expression=X,
