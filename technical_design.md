@@ -1,12 +1,21 @@
 # Technical Design Document
 ## TabGRN-ICL: Tabular Foundation Model for Dynamic GRN Inference
 
-**Version:** 1.3.0  
+**Version:** 1.4.0  
 **Status:** Rotation Scope Active · Dual-Head · Full Trajectory  
 **Project:** Joint rotation — Queen Mary University London / University College London  
 **Supervisors:** Dr. Julien Gautrot · Dr. Yanlan Mao · Dr. Isabel Palacios  
 **Author:** Christian Langridge  
 **Last Updated:** April 2026
+
+**Changelog v1.4.0**
+- §2: Directory structure updated — `data_preparation2/` merged into `data_preparation/`; `model/` marked implemented (not planned); `heads/` subdirectory removed (heads live directly in `tabicl.py`); `training/loss.py` updated to reflect `DualHeadLoss`
+- §3.5: `TabICLRegressor` fully implemented — architecture corrected; 4 parameter groups (col, row, icl, head) replacing the previously-planned 6; `AnchorLabelEmbedder` (formerly `LabelInjector`) documented; `ICLAttention` removed, replaced by pretrained `tabicl.model.encoders.Encoder` (`tf_icl`)
+- §3.7: `CompositionHead` corrected — uses `softmax` + KL divergence loss, not `softplus` + Dirichlet NLL (interim design, Dirichlet NLL planned for a later phase)
+- §3.8: `NormalisedDualLoss` replaced by `DualHeadLoss` — Kendall uncertainty weighting with learnable log σ² parameters
+- §5.1: Softplus section updated to reflect current softmax implementation
+- §8: Test counts updated — 219 unit tests GREEN; `test_tabicl_model.py` and `test_dual_head_loss.py` marked implemented
+- §9.3: Week 7 milestone status updated
 
 **Changelog v1.3.0**
 - §2: Directory structure updated to reflect actual layout (`data_preparation/`, `data_preparation2/`); test folder structure updated post-merge
@@ -111,28 +120,23 @@ TabGRN/
 │       │   ├── paths.py                # Filesystem path resolution (env var + sentinel walk)
 │       │   └── experiment.py           # ExperimentConfig + all sub-configs
 │       │
-│       ├── data_preparation/           # R/Python data pipeline (prep.py, diffusion_trajectory.py)
+│       ├── data_preparation/           # Data pipeline + schema-validated container
 │       │   ├── __init__.py
 │       │   ├── prep.py                 # HVG selection, expression extraction, PreparedData
-│       │   └── diffusion_trajectory.py # CSS integration, diffusion pseudotime, merge_and_save
-│       │
-│       ├── data_preparation2/          # Schema-validated container — handoff to model pipeline
-│       │   ├── __init__.py
-│       │   └── dataset.py              # ProcessedDataset — from_anndata, soft labels, validation
+│       │   ├── diffusion_trajectory.py # CSS integration, diffusion pseudotime, merge_and_save
+│       │   └── dataset.py              # ProcessedDataset — from_anndata, soft labels, validation ✓
 │       │
 │       ├── context/                    # [planned — ContextSampler, CellTableBuilder]
 │       │   ├── __init__.py
 │       │   ├── sampler.py              # ContextSampler — 6-bin pseudotime stratification
 │       │   └── builder.py              # CellTableBuilder — unified matrix construction
 │       │
-│       ├── model/                      # [planned — TabICLRegressor, heads, baselines]
+│       ├── model/                      # ✓ Implemented
 │       │   ├── __init__.py
-│       │   ├── tabicl.py               # TabICLRegressor — main model wrapper
-│       │   ├── heads/
-│       │   │   ├── __init__.py
-│       │   │   ├── pseudotime.py       # PseudotimeHead — sigmoid scalar output
-│       │   │   └── composition.py      # CompositionHead — Dirichlet K-vector
-│       │   └── baselines/
+│       │   ├── tabicl.py               # TabICLRegressor + AnchorLabelEmbedder + SharedTrunk
+│       │   │                           # + PseudotimeHead + CompositionHead + AttentionScorer ✓
+│       │   ├── loss.py                 # DualHeadLoss — Kendall uncertainty weighting ✓
+│       │   └── baselines/              # [planned]
 │       │       ├── __init__.py
 │       │       ├── protocol.py         # BaselineModel Protocol
 │       │       ├── mean_baseline.py    # Mean predictor — variance floor
@@ -144,10 +148,10 @@ TabGRN/
 │       │
 │       ├── training/                   # [planned]
 │       │   ├── __init__.py
-│       │   ├── trainer.py              # Training loop — normalised loss, warmup, callbacks
+│       │   ├── trainer.py              # Training loop — Kendall dual-head loss, warmup, callbacks
 │       │   ├── callbacks.py            # AttentionScorer callback, checkpoint saver
 │       │   ├── scheduler.py            # Warmup + cosine LR scheduler
-│       │   └── loss.py                 # MSELoss, DirichletNLL, NormalisedDualLoss
+│       │   └── loss.py                 # [superseded by model/loss.py DualHeadLoss]
 │       │
 │       ├── explainability/             # [planned]
 │       │   ├── __init__.py
@@ -176,11 +180,12 @@ TabGRN/
     │                                   # [planned: toy_model, synthetic_attention_weights,
     │                                   #  correlated_expression]
     ├── unit/
-    │   ├── test_dataset.py             # ProcessedDataset schema contract tests (34 tests) ✓
-    │   ├── test_experiment_config.py   # Serialisation, hash, preset tests ✓
+    │   ├── test_experiment_config.py   # ExperimentConfig — serialisation, hash, presets (32 tests) ✓
+    │   ├── test_dataset.py             # ProcessedDataset schema contract (29 tests) ✓
+    │   ├── test_tabicl_model.py        # TabICLRegressor + sub-modules (53 tests) ✓
+    │   ├── test_dual_head_loss.py      # DualHeadLoss — Kendall weighting, KL divergence (26 tests) ✓
     │   ├── test_context_sampler.py     # Bin assignment, sparse bin warning [planned]
     │   ├── test_cell_table_builder.py  # Shape, perturbation mask, missing gene warning [planned]
-    │   ├── test_attention_scorer.py    # Layer 1: synthetic weights, top gene, sum=1 [planned]
     │   └── test_shap_scorer.py         # Locked background, correlated-feature sign stability [planned]
     ├── smoke/                          # [planned]
     │   └── test_toy_forward_pass.py    # Layer 2: toy model, shapes, no NaN, (0,1) range
@@ -229,7 +234,7 @@ ExperimentConfig.no_icl_preset()          # Single cell input [Phase 6]
 ---
 
 ### 3.2 `ProcessedDataset`
-**File:** `path/spatialmt/data_preparation2/dataset.py`
+**File:** `path/spatialmt/data_preparation/dataset.py`
 
 **Purpose:** Immutable, schema-validated container for one experiment's training data. Wraps the output of `data_preparation/prep.py` extraction functions with schema validation, soft label computation, and manifest hashing. Every downstream component receives this object; raw files are never accessed after construction.
 
@@ -334,37 +339,44 @@ builder.build(
 ---
 
 ### 3.5 `TabICLRegressor`
-**File:** `path/spatialmt/model/tabicl.py`
+**File:** `path/spatialmt/model/tabicl.py` ✓ Implemented
 
-**Purpose:** TabICLv2 backbone adapted for dual-head pseudotime regression and cell state composition. Manages differential learning rates, staged warmup, and the phase gate for enabling the composition head.
+**Purpose:** TabICLv2 backbone adapted for dual-head pseudotime regression and cell state composition. Manages differential learning rates and staged warmup.
 
-**Three-stage attention architecture:**
+**Forward pass (five stages):**
 
-| Stage | Mechanism | LR | Warmup | Biological role |
-|---|---|---|---|---|
-| 1 — Column | Gene × gene attention | 1e-5 | 500 steps | GRN signal — `AttentionScorer` hooks here |
-| 2 — Row | Feature → cell representation | 1e-4 | None | Aggregates gene context into cell vector |
-| 3 — ICL | Cell × cell, target-aware | 5e-5 | 100 steps | Predicts query relative to anchor pseudotimes |
+| Stage | Module | Input → Output | LR | Warmup | Biological role |
+|---|---|---|---|---|---|
+| 1 — Column | `col_embedder` (`ColEmbedding`) | `(B, n_cells, n_genes)` → `(B, n_cells, seq_len, embed_dim)` | 1e-5 | 500 steps | GRN signal — `AttentionScorer` hooks here |
+| 2 — Row | `row_interactor` (`RowInteraction`) | `(B, n_cells, seq_len, embed_dim)` → `(B, n_cells, d_model)` | 1e-4 | None | Aggregates gene context into cell vector |
+| 3 — Label inject | `anchor_label_embedder` (`AnchorLabelEmbedder`) | `(B, n_cells, d_model)` + pseudotime/soft_labels → same | 1e-3 | None | Injects anchor targets into row representations (ICL protocol) |
+| 4 — ICL | `tf_icl` (`tabicl.model.encoders.Encoder`, pretrained) | `(B, n_cells, d_model)` → same; query attends anchors only | 5e-5 | 100 steps | Predicts query relative to anchor context |
+| 5 — Heads | `shared_trunk` → `pseudotime_head` + `composition_head` | `(B, d_model)` → `(B,)` + `(B, K)` | 1e-3 | None | Dual-head output |
 
-**Column embeddings:** Always re-initialised for `n_genes`. Pre-trained embeddings do not generalise to 512 gene tokens. Trained at `lr_emb=1e-3`.
+`d_model = num_cls × embed_dim` (RowInteraction CLS token output dimension).
 
-**`configure_optimizers()` returns six parameter groups** (both heads active from start):
+**`parameter_groups()` returns four groups:**
 ```python
 [
-    {"params": column_attention.parameters(),  "lr": 1e-5,  "name": "column_attention"},
-    {"params": row_attention.parameters(),     "lr": 1e-4,  "name": "row_attention"},
-    {"params": icl_attention.parameters(),     "lr": 5e-5,  "name": "icl_attention"},
-    {"params": column_embeddings.parameters(), "lr": 1e-3,  "name": "column_embeddings"},
-    {"params": pseudotime_head.parameters(),   "lr": 1e-3,  "name": "pseudotime_head"},
-    {"params": composition_head.parameters(),  "lr": 1e-3,  "name": "composition_head"},
+    {"name": "col",  "params": list(self.col_embedder.parameters()),         "lr": cfg.lr_col},   # 1e-5
+    {"name": "row",  "params": list(self.row_interactor.parameters()),        "lr": cfg.lr_row},   # 1e-4
+    {"name": "icl",  "params": list(self.tf_icl.parameters()),                "lr": cfg.lr_icl},   # 5e-5
+    {"name": "head", "params": (
+        list(self.anchor_label_embedder.parameters())
+        + list(self.shared_trunk.parameters())
+        + list(self.pseudotime_head.parameters())
+        + list(self.composition_head.parameters())
+    ),                                                                         "lr": cfg.lr_head},  # 1e-3
 ]
 ```
 
-**`on_training_step(step)` manages warmup:**
-- At `step == warmup_col_steps`: unfreezes `column_attention_layers`, logs event
-- At `step == warmup_icl_steps`: unfreezes `icl_attention_layers`, logs event
+**Critical implementation details:**
+- `emb.clone()` passed to `row_interactor` — `RowInteraction._train_forward` performs an in-place write to CLS token slots; the clone prevents this from severing autograd to `col_embedder`
+- `batch.context_pseudotime` always passed as `y_train` to `col_embedder`, even though `target_aware=False` — `ColEmbedding` reads `y_train.shape[1]` unconditionally for ISAB masking
+- `tf_icl` loaded via `load_backbone(checkpoint_path)` with key remapping: `icl_predictor.tf_icl.*` → `tf_icl.*`
+- Warmup/freeze scheduling (col: 500 steps, icl: 100 steps) specified in `ModelConfig` but not yet implemented in the training loop
 
-**Dependencies:** `torch`, `torch.nn`, `spatialmt.config.experiment.ModelConfig`
+**Dependencies:** `torch`, `torch.nn`, `tabicl.model.embedding.ColEmbedding`, `tabicl.model.interaction.RowInteraction`, `tabicl.model.encoders.Encoder`, `spatialmt.config.experiment.ModelConfig`
 
 ---
 
@@ -391,14 +403,14 @@ nn.init.constant_(self.linear.bias, 0.5)                   # trajectory midpoint
 ---
 
 ### 3.7 `CompositionHead`
-**File:** `path/spatialmt/model/heads/composition.py`
+**File:** `path/spatialmt/model/tabicl.py` ✓ Implemented
 
-**Purpose:** Dirichlet head producing K concentration parameters representing cell state affinity across K=8 developmental states (from `class3` annotations). Models uncertainty over the composition simplex rather than producing a point estimate.
+**Purpose:** Softmax head producing a K-dimensional probability vector representing cell state affinity across K=8 developmental states (from `class3` annotations). Current interim design; Dirichlet NLL planned for a later phase.
 
-**Architecture:** `Linear(d_model, K)` → `softplus` → `+ 1e-6`
+**Architecture:** `Linear(d_model, K)` → `softmax(dim=-1)`
 
 **Input:** `(batch, d_model)` query cell representation (same vector as `PseudotimeHead`)  
-**Output:** `(batch, K)` Dirichlet concentration parameters `α_k`, all strictly positive
+**Output:** `(batch, K)` soft probability vector, rows sum to 1.0 ∈ (0, 1)^K
 
 **K=8 cell state index mapping:**
 
@@ -413,36 +425,42 @@ nn.init.constant_(self.linear.bias, 0.5)                   # trajectory midpoint
 | 6 | Diencephalic progenitors | 4,899 | Day 16–21 |
 | 7 | Tel/Die neurons | 1,878 | Day 21–30 |
 
-**Initialisation:**
+**Initialisation (via `_init_linear` helper):**
 ```python
-nn.init.normal_(self.linear.weight, mean=0.0, std=0.01)
-nn.init.constant_(self.linear.bias, 1.0)   # softplus(1.0) ≈ 1.31 ≈ Dir(1,...,1) uniform prior
+nn.init.normal_(self.linear.weight, std=0.01)
+nn.init.constant_(self.linear.bias, 0.0)   # uniform-ish softmax prior at init
 ```
 
-**Loss:** Negative Dirichlet log-likelihood against soft labels  
+**Loss:** KL divergence KL(target ∥ pred) via `DualHeadLoss.composition_loss` — see §3.8  
 **Target:** `soft_labels ∈ (0, 1)^K` with rows summing to 1.0 — computed by distance-to-centroid softmax from `ProcessedDataset`
+
+**Planned upgrade:** Dirichlet NLL with `softplus` activation (Dirichlet concentration parameters α_k > 0) — deferred until rotation baseline is established (TDD v1.3.0 interim note)
 
 ---
 
-### 3.8 `NormalisedDualLoss`
-**File:** `path/spatialmt/training/loss.py`
+### 3.8 `DualHeadLoss`
+**File:** `path/spatialmt/model/loss.py` ✓ Implemented
 
-**Purpose:** Balances MSE and Dirichlet NLL so neither head dominates during training. Without balancing, Dirichlet NLL is approximately 50× larger than MSE at K=8 initialisation, driving almost all gradient signal.
+**Purpose:** Uncertainty-weighted dual-head loss (Kendall, Gal & Cipolla, NeurIPS 2018). Learns the relative task weighting from data via learnable log σ² parameters, eliminating the need for manual λ tuning.
 
 **Mechanism:**
 ```python
-# Step 0: compute initial loss values and freeze them
-mse_0    = MSE(predictions_step0,    targets_pseudotime)    # ≈ 0.083
-dir_nll_0 = DirichletNLL(alpha_step0, targets_soft_labels)  # ≈ 4.2 for K=8
+# Learnable log-variance parameters (nn.Parameter, 0-dim scalars)
+s_pt   = log_sigma_sq_pt    # init = 0 → σ² = 1
+s_comp = log_sigma_sq_comp  # init = 0 → σ² = 1
 
-# Every subsequent step:
-loss = (mse_loss / mse_0) + (dir_nll_loss / dir_nll_0)
+L_pt   = MSE(pt_pred, pt_target)
+L_comp = KL(comp_target ∥ comp_pred)   # Σ_k π_k · (log π_k – log p_k)
+
+total = exp(–s_pt)  · L_pt   + ½·s_pt
+      + exp(–s_comp) · L_comp + ½·s_comp
 ```
 
 **Properties:**
-- Both terms equal 1.0 at step zero — equal gradient contribution from step one
-- Scale-invariant to batch size and hardware tier
-- `mse_0` and `dir_nll_0` are stored in `experiments/{run_id}/config.json` under `initial_loss_scales`
+- At init (s=0): `total = L_pt + L_comp` — equal unit weighting
+- ½·s penalty prevents σ → ∞ trivially zeroing both losses
+- `log_sigma_sq_pt` and `log_sigma_sq_comp` must be included in the head parameter group alongside the model's head layers
+- Returns `(total, L_pt, L_comp)` — total for `.backward()`, components for logging
 
 **Active from training start** — both heads train simultaneously from step one.
 
@@ -636,40 +654,27 @@ sequenceDiagram
 
 ## 5. Implementation Details
 
-### 5.1 Softplus Activation
+### 5.1 Composition Head Activation (Current: Softmax; Planned: Softplus + Dirichlet)
 
-`CompositionHead` uses `torch.nn.Softplus` rather than `torch.nn.ReLU` or `torch.exp` to produce strictly positive Dirichlet concentration parameters.
+`CompositionHead` currently uses `torch.nn.functional.softmax` to produce a probability vector over K=8 cell states. This is an interim design — Dirichlet NLL with a `softplus` activation is planned for a later phase.
 
 ```python
-self.softplus = nn.Softplus()   # log(1 + exp(x))
-
 def forward(self, x: torch.Tensor) -> torch.Tensor:
-    return self.softplus(self.linear(x)) + 1e-6
+    return torch.softmax(self.linear(x), dim=-1)   # (B, K), rows sum to 1.0
 ```
 
-**Why Softplus over alternatives:**
+**Loss:** KL divergence KL(target ∥ pred) — natural parameter-free measure between two probability distributions. KL = 0 iff pred == target exactly. No concentration hyperparameter required.
 
-| Activation | Issue |
-|---|---|
-| `ReLU` | Produces exact zero for negative inputs — Dirichlet undefined at α=0 |
-| `exp` | Numerically unstable for large positive inputs — overflow risk |
-| `sigmoid` | Bounded to (0,1) — Dirichlet concentration parameters should not be capped at 1 |
-| `Softplus` | Smooth, strictly positive, unbounded above, numerically stable |
+**Why KL divergence over Dirichlet NLL (current phase):**
 
-### 5.2 Epsilon for Numerical Stability
+| Loss | Requirement | Issue at this stage |
+|---|---|---|
+| KL divergence | Two probability distributions | Directly compares softmax outputs to soft labels — zero implementation complexity |
+| Dirichlet NLL | Concentration parameters α_k > 0 | Requires softplus activation + epsilon; concentration scale interpretation less intuitive during rotation debugging |
 
-```python
-alpha = self.softplus(self.linear(x)) + 1e-6
-```
+**Planned upgrade:** `Linear(d_model, K)` → `softplus` → `+ 1e-6` → Dirichlet concentration parameters, with Dirichlet NLL loss. The `softplus + 1e-6` design note from v1.2.0 remains valid for the upgrade path.
 
-The `1e-6` additive epsilon prevents two failure modes:
-
-1. **Floating-point underflow.** Softplus is theoretically > 0 for all inputs but can underflow to 0.0 in float32 for large negative linear outputs early in training (before the bias initialisation takes effect).
-2. **Dirichlet undefined at boundary.** `torch.distributions.Dirichlet.log_prob()` computes `(α-1) * log(x)` — if `α = 0`, this is `-inf` regardless of the input, producing NaN gradients on the first backward pass.
-
-The epsilon is small enough that it has no meaningful effect on the distribution shape for `α > 0.01`.
-
-### 5.3 Bias Initialisation Logic
+### 5.2 Bias Initialisation Logic
 
 **PseudotimeHead:**
 ```python
@@ -683,12 +688,11 @@ nn.init.constant_(self.linear.bias, 0.5)
 
 **CompositionHead:**
 ```python
-nn.init.constant_(self.linear.bias, 1.0)
-# softplus(1.0) ≈ 1.313
-# All 8 concentration parameters initialised near 1.31
-# This approximates Dir(1.31, ..., 1.31) — near-uniform over 8 states
-# The model learns state affinity by deviating from uniform assignment
-# Initial Dirichlet NLL ≈ log Γ(K×1.31) - K×log Γ(1.31) ≈ 4.2 for K=8
+nn.init.constant_(self.linear.bias, 0.0)
+# softmax of zero-bias linear = uniform over K states at init (when weights ≈ 0)
+# The model learns state affinity by deviating from this uniform prior
+# Initial KL divergence against non-uniform soft labels drives early training signal
+# (When Dirichlet NLL upgrade ships, bias will change to 1.0 → softplus(1.0) ≈ 1.31)
 ```
 
 **Weight initialisation (both heads):**
@@ -773,7 +777,7 @@ def _check_memory_feasibility(n_genes, d_model, batch_size, gpu_memory_bytes):
 
 ```python
 from spatialmt.config.experiment import ExperimentConfig
-from spatialmt.data_preparation2.dataset import ProcessedDataset
+from spatialmt.data_preparation.dataset import ProcessedDataset
 from spatialmt.context.sampler import ContextSampler
 from spatialmt.context.builder import CellTableBuilder
 from spatialmt.model.tabicl import TabICLRegressor
@@ -946,9 +950,15 @@ synthetic_attention_weights     # (n_heads=2, n_genes=10) — SOX2 boosted to hi
 correlated_expression           # GENE_02 and GENE_03 perfectly correlated (SHAP stability)
 ```
 
-### 8.2a Data Preparation Tests
+### 8.2a Data Preparation and Model Tests
 
-**Files:**
+**Unit test files (all GREEN — 219 tests total):**
+- `tests/unit/test_experiment_config.py` — 32 tests: ExperimentConfig serialisation, hash, presets, sub-config validation
+- `tests/unit/test_dataset.py` — 29 tests: ProcessedDataset schema contract, soft label computation, manifest hash
+- `tests/unit/test_tabicl_model.py` — 53 tests: TabICLRegressor construction, forward pass contracts, AnchorLabelEmbedder, AttentionScorer, parameter groups, gradient flow
+- `tests/unit/test_dual_head_loss.py` — 26 tests: DualHeadLoss Kendall weighting, KL divergence component, uncertainty mechanics
+
+**Integration test files:**
 - `tests/integration/test_prep.py` — tests for `spatialmt.data_preparation.prep` (moved from `test/` in v1.3.0)
 - `tests/integration/test_dataset.py` — 18 integration tests for `ProcessedDataset.from_anndata` (require anndata/scanpy)
 
@@ -1043,7 +1053,8 @@ pytest tests/unit/ tests/smoke/ -v
 | Week 4 (Apr 15) | `prep.py` review issues resolved; RED phase tests passing; HVG flavor corrected | ✓ Complete |
 | Week 5 end (Apr 22) | Scaffold pseudotime integrated; `PreparedData` dataclass green | ✓ Complete |
 | Week 6 (Apr 29) | Diffusion pseudotime computed and validated; `ProcessedDataset.from_anndata` implemented and integration-tested | ✓ Complete |
-| Week 7 end (May 6) | **`ContextSampler` + `CellTableBuilder` implemented; first Myriad GPU job submitted — dual-head — critical gate** | In progress |
+| Week 7 (Apr 21) | `TabICLRegressor` + `DualHeadLoss` fully implemented; 219 unit tests GREEN; pretrained `Encoder` (tf_icl) integrated; `AnchorLabelEmbedder` formalised | ✓ Complete |
+| Week 7 end (May 6) | **`ContextSampler` + `CellTableBuilder` implemented; training loop wired; first Myriad GPU job submitted — dual-head — critical gate** | In progress |
 | Week 8 (May 13) | Baseline ladder (mean → ridge → XGBoost) complete; comparison table generated | |
 | Week 10 (May 27) | Biological plausibility gate — SOX2 in top-20 | |
 | Week 11 (Jun 3) | WLS perturbation Signals 1 + 2 + 3 (composition shift) passing | |
@@ -1128,4 +1139,4 @@ Training baselines on the full dataset **removes both leakage concerns** and giv
 
 ---
 
-*This document reflects all architectural decisions through v1.3.0 (April 2026). The rotation scope (dual-head, regression baseline ladder, WLS/GLI3 perturbation validation) targets July 3rd.*
+*This document reflects all architectural decisions through v1.4.0 (April 2026). The rotation scope (dual-head, regression baseline ladder, WLS/GLI3 perturbation validation) targets July 3rd.*
