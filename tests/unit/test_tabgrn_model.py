@@ -1,5 +1,5 @@
 """
-Unit tests for spatialmt.model.tabicl — TabICLRegressor and sub-modules.
+Unit tests for spatialmt.model.tabgrn — TabICLRegressor and sub-modules.
 
 Architecture under test
 -----------------------
@@ -85,7 +85,7 @@ def _make_model(
     num_cls: int = NUM_CLS,
     col_num_inds: int = COL_NUM_INDS,
 ) -> "TabICLRegressor":
-    from spatialmt.model.tabicl import TabICLRegressor
+    from spatialmt.model.tabgrn import TabICLRegressor
     return TabICLRegressor(
         n_genes=n_genes,
         embed_dim=embed_dim,
@@ -101,18 +101,18 @@ def _make_model(
 # Import sanity
 # ---------------------------------------------------------------------------
 
-def test_import_tabicl_regressor():
-    from spatialmt.model.tabicl import TabICLRegressor
+def test_import_tabgrn_regressor():
+    from spatialmt.model.tabgrn import TabICLRegressor
     assert TabICLRegressor is not None
 
 
 def test_import_attention_scorer():
-    from spatialmt.model.tabicl import AttentionScorer
+    from spatialmt.model.tabgrn import AttentionScorer
     assert AttentionScorer is not None
 
 
 def test_import_custom_sub_modules():
-    from spatialmt.model.tabicl import (
+    from spatialmt.model.tabgrn import (
         AnchorLabelEmbedder,
         SharedTrunk,
         PseudotimeHead,
@@ -120,7 +120,7 @@ def test_import_custom_sub_modules():
     )
 
 
-def test_import_tabicl_backbone_classes():
+def test_import_tabgrn_backbone_classes():
     """TabICLv2 backbone classes must be importable from the tabicl package."""
     from tabicl.model.embedding import ColEmbedding
     from tabicl.model.interaction import RowInteraction
@@ -163,28 +163,28 @@ def test_model_has_tf_icl():
 
 
 def test_model_has_anchor_label_embedder():
-    from spatialmt.model.tabicl import AnchorLabelEmbedder
+    from spatialmt.model.tabgrn import AnchorLabelEmbedder
     model = _make_model()
     assert hasattr(model, "anchor_label_embedder")
     assert isinstance(model.anchor_label_embedder, AnchorLabelEmbedder)
 
 
 def test_model_has_shared_trunk():
-    from spatialmt.model.tabicl import SharedTrunk
+    from spatialmt.model.tabgrn import SharedTrunk
     model = _make_model()
     assert hasattr(model, "shared_trunk")
     assert isinstance(model.shared_trunk, SharedTrunk)
 
 
 def test_model_has_pseudotime_head():
-    from spatialmt.model.tabicl import PseudotimeHead
+    from spatialmt.model.tabgrn import PseudotimeHead
     model = _make_model()
     assert hasattr(model, "pseudotime_head")
     assert isinstance(model.pseudotime_head, PseudotimeHead)
 
 
 def test_model_has_composition_head():
-    from spatialmt.model.tabicl import CompositionHead
+    from spatialmt.model.tabgrn import CompositionHead
     model = _make_model()
     assert hasattr(model, "composition_head")
     assert isinstance(model.composition_head, CompositionHead)
@@ -348,7 +348,7 @@ def test_forward_deterministic():
 # ---------------------------------------------------------------------------
 
 def test_anchor_label_embedder_output_shape():
-    from spatialmt.model.tabicl import AnchorLabelEmbedder
+    from spatialmt.model.tabgrn import AnchorLabelEmbedder
     inj = AnchorLabelEmbedder(d_model=D_MODEL, k=K)
     n_cells = N_ANCHORS + 1
     x   = torch.rand(B, n_cells, D_MODEL)
@@ -360,7 +360,7 @@ def test_anchor_label_embedder_output_shape():
 
 def test_anchor_label_embedder_query_row_unchanged():
     """Query row (last position) must not be modified — no label leakage."""
-    from spatialmt.model.tabicl import AnchorLabelEmbedder
+    from spatialmt.model.tabgrn import AnchorLabelEmbedder
     inj = AnchorLabelEmbedder(d_model=D_MODEL, k=K)
     n_cells = N_ANCHORS + 1
     x   = torch.rand(B, n_cells, D_MODEL)
@@ -372,7 +372,7 @@ def test_anchor_label_embedder_query_row_unchanged():
 
 def test_anchor_label_embedder_anchor_rows_modified():
     """Anchor rows must be modified — injection must actually change them."""
-    from spatialmt.model.tabicl import AnchorLabelEmbedder
+    from spatialmt.model.tabgrn import AnchorLabelEmbedder
     inj = AnchorLabelEmbedder(d_model=D_MODEL, k=K)
     n_cells = N_ANCHORS + 1
     x   = torch.rand(B, n_cells, D_MODEL)
@@ -388,7 +388,7 @@ def test_anchor_label_embedder_anchor_rows_modified():
 # ---------------------------------------------------------------------------
 
 def test_shared_trunk_output_shape():
-    from spatialmt.model.tabicl import SharedTrunk
+    from spatialmt.model.tabgrn import SharedTrunk
     trunk = SharedTrunk(d_model=D_MODEL)
     x = torch.rand(B, D_MODEL)
     out = trunk(x)
@@ -400,7 +400,7 @@ def test_shared_trunk_output_shape():
 # ---------------------------------------------------------------------------
 
 def test_pseudotime_head_output_shape():
-    from spatialmt.model.tabicl import PseudotimeHead
+    from spatialmt.model.tabgrn import PseudotimeHead
     head = PseudotimeHead(d_model=D_MODEL)
     x = torch.rand(B, D_MODEL)
     out = head(x)
@@ -408,7 +408,7 @@ def test_pseudotime_head_output_shape():
 
 
 def test_pseudotime_head_sigmoid_range():
-    from spatialmt.model.tabicl import PseudotimeHead
+    from spatialmt.model.tabgrn import PseudotimeHead
     head = PseudotimeHead(d_model=D_MODEL)
     x = torch.rand(B, D_MODEL)
     out = head(x)
@@ -417,7 +417,7 @@ def test_pseudotime_head_sigmoid_range():
 
 def test_pseudotime_head_init_bias():
     """output_head_init_bias=0.5 means initial raw bias ≈ 0.5 → sigmoid ≈ 0.62."""
-    from spatialmt.model.tabicl import PseudotimeHead
+    from spatialmt.model.tabgrn import PseudotimeHead
     head = PseudotimeHead(d_model=D_MODEL, init_bias=0.5)
     assert head.linear.bias is not None
     assert pytest.approx(head.linear.bias.item(), abs=1e-6) == 0.5
@@ -428,7 +428,7 @@ def test_pseudotime_head_init_bias():
 # ---------------------------------------------------------------------------
 
 def test_composition_head_output_shape():
-    from spatialmt.model.tabicl import CompositionHead
+    from spatialmt.model.tabgrn import CompositionHead
     head = CompositionHead(d_model=D_MODEL, k=K)
     x = torch.rand(B, D_MODEL)
     out = head(x)
@@ -436,7 +436,7 @@ def test_composition_head_output_shape():
 
 
 def test_composition_head_softmax_sums():
-    from spatialmt.model.tabicl import CompositionHead
+    from spatialmt.model.tabgrn import CompositionHead
     head = CompositionHead(d_model=D_MODEL, k=K)
     x = torch.rand(B, D_MODEL)
     out = head(x)
@@ -448,7 +448,7 @@ def test_composition_head_softmax_sums():
 # ---------------------------------------------------------------------------
 
 def test_attention_scorer_extract_after_forward():
-    from spatialmt.model.tabicl import AttentionScorer
+    from spatialmt.model.tabgrn import AttentionScorer
     model = _make_model()
     scorer = AttentionScorer(model)
     batch = _make_batch()
@@ -460,7 +460,7 @@ def test_attention_scorer_extract_after_forward():
 
 def test_attention_scorer_shape():
     """Cosine similarity of gene embeddings: (B, n_cells, n_genes, n_genes)."""
-    from spatialmt.model.tabicl import AttentionScorer
+    from spatialmt.model.tabgrn import AttentionScorer
     model = _make_model()
     scorer = AttentionScorer(model)
     batch = _make_batch()
@@ -472,7 +472,7 @@ def test_attention_scorer_shape():
 
 
 def test_attention_scorer_scores_are_detached():
-    from spatialmt.model.tabicl import AttentionScorer
+    from spatialmt.model.tabgrn import AttentionScorer
     model = _make_model()
     scorer = AttentionScorer(model)
     batch = _make_batch()
@@ -484,7 +484,7 @@ def test_attention_scorer_scores_are_detached():
 
 def test_attention_scorer_scores_symmetric():
     """Cosine similarity matrix must be symmetric."""
-    from spatialmt.model.tabicl import AttentionScorer
+    from spatialmt.model.tabgrn import AttentionScorer
     model = _make_model()
     scorer = AttentionScorer(model)
     batch = _make_batch()
@@ -496,7 +496,7 @@ def test_attention_scorer_scores_symmetric():
 
 def test_attention_scorer_diagonal_is_one():
     """Cosine similarity of a vector with itself must be 1.0."""
-    from spatialmt.model.tabicl import AttentionScorer
+    from spatialmt.model.tabgrn import AttentionScorer
     model = _make_model()
     scorer = AttentionScorer(model)
     batch = _make_batch()
@@ -509,7 +509,7 @@ def test_attention_scorer_diagonal_is_one():
 
 def test_attention_scorer_values_bounded():
     """Cosine similarity values must lie in [-1, 1]."""
-    from spatialmt.model.tabicl import AttentionScorer
+    from spatialmt.model.tabgrn import AttentionScorer
     model = _make_model()
     scorer = AttentionScorer(model)
     batch = _make_batch()
@@ -521,7 +521,7 @@ def test_attention_scorer_values_bounded():
 
 
 def test_attention_scorer_raises_before_forward():
-    from spatialmt.model.tabicl import AttentionScorer
+    from spatialmt.model.tabgrn import AttentionScorer
     model = _make_model()
     scorer = AttentionScorer(model)
     with pytest.raises(RuntimeError):
@@ -531,7 +531,7 @@ def test_attention_scorer_raises_before_forward():
 
 def test_attention_scorer_remove_hook_stops_capture():
     """After remove_hook(), running another forward must not update the scorer."""
-    from spatialmt.model.tabicl import AttentionScorer
+    from spatialmt.model.tabgrn import AttentionScorer
     model = _make_model()
     scorer = AttentionScorer(model)
     batch = _make_batch()

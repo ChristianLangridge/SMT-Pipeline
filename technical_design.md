@@ -1,20 +1,33 @@
 # Technical Design Document
 ## TabGRN-ICL: Tabular Foundation Model for Dynamic GRN Inference
 
-**Version:** 1.4.0  
+**Version:** 1.6.0  
 **Status:** Rotation Scope Active · Dual-Head · Full Trajectory  
 **Project:** Joint rotation — Queen Mary University London / University College London  
 **Supervisors:** Dr. Julien Gautrot · Dr. Yanlan Mao · Dr. Isabel Palacios  
 **Author:** Christian Langridge  
 **Last Updated:** April 2026
 
+**Changelog v1.6.0**
+- §2: `context/` marked ✓ Implemented; `collate.py` added to directory listing
+- §3.3: `ContextSampler` marked ✓ Implemented; actual method signatures documented
+- §3.4: `CellTableBuilder` API corrected — actual return type is `(CellTable, TrainingTargets)`, not `np.ndarray`; `perturbation_mask` parameter removed (not implemented); `CellTable` and `TrainingTargets` dataclasses documented
+- §3.4b: New section — `ICLBatch` and `icl_collate` (collate.py) documented
+- §3.1: `AblationTarget` dataclass documented; `ModelConfig.lr_emb` added to field table
+- §8.2a: Test counts updated — 77 new tests (context_sampler: 22, cell_table_builder: 27, icl_collate: 28); total 219 unit tests GREEN
+- §9.3: Week 7 end milestone marked complete
+
+**Changelog v1.5.0**
+- Renamed `tabicl.py` → `tabgrn.py` across the codebase and TDD; `test_tabicl_model.py` → `test_tabgrn_model.py`
+- §3.6: `PseudotimeHead` file path corrected from planned `model/heads/pseudotime.py` to actual `model/tabgrn.py` (all sub-modules live in one file)
+
 **Changelog v1.4.0**
-- §2: Directory structure updated — `data_preparation2/` merged into `data_preparation/`; `model/` marked implemented (not planned); `heads/` subdirectory removed (heads live directly in `tabicl.py`); `training/loss.py` updated to reflect `DualHeadLoss`
+- §2: Directory structure updated — `data_preparation2/` merged into `data_preparation/`; `model/` marked implemented (not planned); `heads/` subdirectory removed (heads live directly in `tabgrn.py`); `training/loss.py` updated to reflect `DualHeadLoss`
 - §3.5: `TabICLRegressor` fully implemented — architecture corrected; 4 parameter groups (col, row, icl, head) replacing the previously-planned 6; `AnchorLabelEmbedder` (formerly `LabelInjector`) documented; `ICLAttention` removed, replaced by pretrained `tabicl.model.encoders.Encoder` (`tf_icl`)
 - §3.7: `CompositionHead` corrected — uses `softmax` + KL divergence loss, not `softplus` + Dirichlet NLL (interim design, Dirichlet NLL planned for a later phase)
 - §3.8: `NormalisedDualLoss` replaced by `DualHeadLoss` — Kendall uncertainty weighting with learnable log σ² parameters
 - §5.1: Softplus section updated to reflect current softmax implementation
-- §8: Test counts updated — 219 unit tests GREEN; `test_tabicl_model.py` and `test_dual_head_loss.py` marked implemented
+- §8: Test counts updated — 219 unit tests GREEN; `test_tabgrn_model.py` and `test_dual_head_loss.py` marked implemented
 - §9.3: Week 7 milestone status updated
 
 **Changelog v1.3.0**
@@ -126,14 +139,15 @@ TabGRN/
 │       │   ├── diffusion_trajectory.py # CSS integration, diffusion pseudotime, merge_and_save
 │       │   └── dataset.py              # ProcessedDataset — from_anndata, soft labels, validation ✓
 │       │
-│       ├── context/                    # [planned — ContextSampler, CellTableBuilder]
+│       ├── context/                    # ✓ Implemented
 │       │   ├── __init__.py
-│       │   ├── sampler.py              # ContextSampler — 6-bin pseudotime stratification
-│       │   └── builder.py              # CellTableBuilder — unified matrix construction
+│       │   ├── sampler.py              # ContextSampler — day-stratified anchor sampling ✓
+│       │   ├── builder.py              # CellTableBuilder + CellTable + TrainingTargets ✓
+│       │   └── collate.py              # ICLBatch + icl_collate — DataLoader collate fn ✓
 │       │
 │       ├── model/                      # ✓ Implemented
 │       │   ├── __init__.py
-│       │   ├── tabicl.py               # TabICLRegressor + AnchorLabelEmbedder + SharedTrunk
+│       │   ├── tabgrn.py               # TabICLRegressor + AnchorLabelEmbedder + SharedTrunk
 │       │   │                           # + PseudotimeHead + CompositionHead + AttentionScorer ✓
 │       │   ├── loss.py                 # DualHeadLoss — Kendall uncertainty weighting ✓
 │       │   └── baselines/              # [planned]
@@ -182,10 +196,11 @@ TabGRN/
     ├── unit/
     │   ├── test_experiment_config.py   # ExperimentConfig — serialisation, hash, presets (32 tests) ✓
     │   ├── test_dataset.py             # ProcessedDataset schema contract (29 tests) ✓
-    │   ├── test_tabicl_model.py        # TabICLRegressor + sub-modules (53 tests) ✓
+    │   ├── test_tabgrn_model.py        # TabICLRegressor + sub-modules (53 tests) ✓
     │   ├── test_dual_head_loss.py      # DualHeadLoss — Kendall weighting, KL divergence (26 tests) ✓
-    │   ├── test_context_sampler.py     # Bin assignment, sparse bin warning [planned]
-    │   ├── test_cell_table_builder.py  # Shape, perturbation mask, missing gene warning [planned]
+    │   ├── test_context_sampler.py     # ContextSampler — bin assignment, sparse bin warning (22 tests) ✓
+    │   ├── test_cell_table_builder.py  # CellTableBuilder + CellTable + TrainingTargets (27 tests) ✓
+    │   ├── test_icl_collate.py         # ICLBatch + icl_collate — shapes, ragged guard (28 tests) ✓
     │   └── test_shap_scorer.py         # Locked background, correlated-feature sign stability [planned]
     ├── smoke/                          # [planned]
     │   └── test_toy_forward_pass.py    # Layer 2: toy model, shapes, no NaN, (0,1) range
@@ -213,9 +228,10 @@ TabGRN/
 |---|---|---|
 | `DataConfig` | `max_genes`, `test_timepoint=11`, `hardware_tier`, `n_cell_states=8`, `label_softening_temperature=1.0` | `log1p_transform` is validated as `True` at construction; raises if `False` |
 | `ContextConfig` | `n_bins=6`, `cells_per_bin=5`, `max_context_cells=50`, `allow_replacement=True` | Validates `n_bins × cells_per_bin ≤ max_context_cells`; bin 2 (day 11) withheld |
-| `ModelConfig` | `lr_col=1e-5`, `lr_row=1e-4`, `lr_icl=5e-5`, `lr_emb=1e-3`, `lr_head=1e-3`, `warmup_col_steps=500`, `warmup_icl_steps=100`, `output_head_init_bias=0.5`, `output_head_init_std=0.01` | `bio_plausibility_passed` populated post-training |
-| `ExplainabilityConfig` | `shap_background_size=100`, `shap_background_seed=42`, `bio_plausibility_required=["SOX2"]` | SOX2 absence in top-20 triggers fallback strategy |
-| `PerturbationConfig` | `perturbation_mask={"WLS": 0.0}`, `pseudotime_delta_threshold=-0.05`, `attention_drop_fraction=0.1`, `composition_shift_threshold=0.05` | Composition shift is primary signal for WLS |
+| `ModelConfig` | `lr_col=1e-5`, `lr_row=1e-4`, `lr_icl=5e-5`, `lr_emb=1e-3`, `lr_head=1e-3`, `warmup_col_steps=500`, `warmup_icl_steps=100`, `output_head_init_bias=0.5`, `output_head_init_std=0.01` | `lr_emb` is for column embeddings (always re-initialised); `bio_plausibility_passed` populated post-training |
+| `ExplainabilityConfig` | `shap_background_size=100`, `shap_background_seed=42`, `bio_plausibility_required=("SOX2",)`, `ih_n_steps=50`, `ih_baseline_strategy="day5_mean"`, `ih_top_k_edges=500` | SOX2 absence in top-20 triggers fallback strategy; IH fields configure Integrated Hessians |
+| `AblationTarget` | `gene`, `zero_in_query=True`, `zero_in_context_states=None`, `zero_in_context_pseudotime_below=None`, `zero_in_context_pseudotime_above=None` | Composable per-gene ablation spec; supports query-only, population-wide, state-specific, and temporal-window variants |
+| `PerturbationConfig` | `ablations=[AblationTarget(gene="WLS")]`, `pseudotime_delta_threshold=-0.05`, `attention_drop_fraction=0.1`, `composition_shift_threshold=0.05` | Default: single cell-autonomous WLS ablation; composition shift is primary signal |
 | `BenchmarkConfig` | `baselines=["mean","ridge_pca","xgboost_regressor","tabicl_finetune"]` (rotation) | Dual-axis justification: prediction accuracy + GRN explainability |
 
 **Named presets:**
@@ -285,61 +301,103 @@ ProcessedDataset.save(path) / .load(path)          # Atomic write with manifest 
 ---
 
 ### 3.3 `ContextSampler`
-**File:** `path/spatialmt/context/sampler.py`
+**File:** `path/spatialmt/context/sampler.py` ✓ Implemented
 
-**Purpose:** Samples anchor cells for the ICL context window using pseudotime-stratified bin sampling. Guarantees every context window contains representation from all developmental stages with available context.
+**Purpose:** Samples anchor cells for the ICL context window using day-stratified bin sampling. Groups cells by `collection_day`, excludes the withheld test day (11), and samples `cells_per_bin` anchors from each active day-bin per query.
 
 **Bin layout:**
 
-| Bin | Collection day | Pseudotime range | Status |
-|---|---|---|---|
-| 0 | Day 5 | [0.0, ~0.1) | Context |
-| 1 | Day 7 | [~0.1, ~0.2) | Context |
-| 2 | Day 11 | withheld | **Test — excluded from sampling** |
-| 3 | Day 16 | [~0.4, ~0.6) | Context |
-| 4 | Day 21 | [~0.6, ~0.8) | Context |
-| 5 | Day 30 | [~0.8, 1.0] | Context |
+| Bin | Collection day | Status |
+|---|---|---|
+| 0 | Day 5 | Context |
+| 1 | Day 7 | Context |
+| — | Day 11 | **Test — excluded from sampling** |
+| 2 | Day 16 | Context |
+| 3 | Day 21 | Context |
+| 4 | Day 30 | Context |
 
-Exact bin edges TBD after diffusion pseudotime computed. Scaffold pseudotime bin edges derived from linear day scaling.
+Day-based grouping is used directly (5 active bins at runtime). `bin_edges` is accepted as an optional constructor argument and stored for future pseudotime-only binning mode.
 
-**Sparse bin guard:** When a bin contains fewer cells than `cells_per_bin`, sampling proceeds with replacement and a `WARNING` is logged with the duplication count. This is auditable via `experiments/{run_id}/sampler_warnings.log`. Setting `allow_replacement=False` in `ContextConfig` raises instead.
+**Sparse bin guard:** When a bin contains fewer eligible cells than `cells_per_bin`, sampling proceeds with replacement and a `UserWarning` is raised. Setting `allow_replacement=False` raises `ValueError` instead.
 
-**Inputs:** `ProcessedDataset`, `ContextConfig`, optional `bin_edges`  
-**Output:** `(anchor_cell_ids: list[str], anchor_pseudotimes: np.ndarray)`
+**Constructor:**
+```python
+ContextSampler(dataset: ProcessedDataset, config: ContextConfig, bin_edges=None)
+```
 
-**Dependencies:** `numpy`, `spatialmt.data.dataset.ProcessedDataset`, `spatialmt.config.experiment.ContextConfig`
+**Primary method:**
+```python
+sampler.sample(query_cell_id: str, rng: Generator | int | None = None)
+    -> (anchor_cell_ids: list[str], anchor_pseudotimes: np.ndarray[float32])
+```
+The query cell is excluded from its own context window. `rng` accepts a `np.random.Generator`, an `int` seed, or `None` (fresh unseeded generator).
+
+**Dependencies:** `numpy`, `spatialmt.config.experiment.ContextConfig`, `spatialmt.data_preparation.dataset.ProcessedDataset`
 
 ---
 
-### 3.4 `CellTableBuilder`
-**File:** `path/spatialmt/context/builder.py`
+### 3.4 `CellTableBuilder`, `CellTable`, `TrainingTargets`
+**File:** `path/spatialmt/context/builder.py` ✓ Implemented
 
-**Purpose:** Unified matrix construction for both context sampling and in-silico perturbation. Perturbation is architecturally identical to context construction with overrides applied — a single class handles both use cases, eliminating the most predictable DRY violation in the system.
+**Purpose:** Assembles model inputs and training targets for a single ICL training step. Enforces the model/loss boundary — query labels are never placed in `CellTable`; they are held separately in `TrainingTargets` and only touched by the loss function.
 
-**Primary method:**
+**Dataclasses:**
 
 ```python
-builder.build(
-    cell_ids: list[str],
-    perturbation_mask: dict[str, float] | None = None
-) -> np.ndarray  # shape: (len(cell_ids), n_genes)
+@dataclass
+class CellTable:
+    context_expression:  np.ndarray  # (n_anchors, n_genes) float32 — model input
+    context_pseudotime:  np.ndarray  # (n_anchors,)         float32 — model input
+    context_soft_labels: np.ndarray  # (n_anchors, K)       float32 — model input
+    query_expression:    np.ndarray  # (n_genes,)           float32 — model input
+
+@dataclass
+class TrainingTargets:
+    query_pseudotime:  np.floating   # scalar float32 — loss only
+    query_soft_labels: np.ndarray    # (K,) float32   — loss only
 ```
 
-**Perturbation mask behaviour:**
-- Each `{gene: value}` pair overrides the expression column for that gene
-- Genes absent from `dataset.gene_names` (filtered by HVG selection) log a `WARNING` and are silently skipped
-- The WLS knockout is `perturbation_mask={"WLS": 0.0}`
+**Constructor:** `CellTableBuilder(dataset: ProcessedDataset)` — builds an O(1) `cell_id → row_index` lookup once; reused across all `build()` calls.
 
-**Invariants enforced post-build:**
-- Output shape == `(len(cell_ids), n_genes)`
-- No NaN introduced by perturbation
+**Primary method:**
+```python
+builder.build(
+    query_cell_id: str,
+    anchor_ids: list[str],          # from ContextSampler.sample(); duplicates allowed
+) -> tuple[CellTable, TrainingTargets]
+```
+Raises `KeyError` if any id is not in the dataset.
 
-**Dependencies:** `numpy`, `spatialmt.data.dataset.ProcessedDataset`, `spatialmt.config.experiment.ContextConfig`
+**Dependencies:** `numpy`, `dataclasses`, `spatialmt.data_preparation.dataset.ProcessedDataset`
+
+---
+
+### 3.4b `ICLBatch` and `icl_collate`
+**File:** `path/spatialmt/context/collate.py` ✓ Implemented
+
+**Purpose:** DataLoader collate function. Stacks a list of `(CellTable, TrainingTargets)` pairs into a single `ICLBatch` of torch.Tensors. All fields are `float32` on CPU; device transfer is handled by the training loop.
+
+```python
+@dataclass
+class ICLBatch:
+    context_expression:  torch.Tensor  # (B, n_anchors, n_genes)
+    context_pseudotime:  torch.Tensor  # (B, n_anchors)
+    context_soft_labels: torch.Tensor  # (B, n_anchors, K)
+    query_expression:    torch.Tensor  # (B, n_genes)
+    query_pseudotime:    torch.Tensor  # (B,)
+    query_soft_labels:   torch.Tensor  # (B, K)
+
+def icl_collate(batch: list[tuple[CellTable, TrainingTargets]]) -> ICLBatch
+```
+
+**Ragged guard:** Raises `ValueError` if any item has a different `n_anchors` than item 0 — ragged context windows are not supported.
+
+**Dependencies:** `numpy`, `torch`, `spatialmt.context.builder.CellTable`, `spatialmt.context.builder.TrainingTargets`
 
 ---
 
 ### 3.5 `TabICLRegressor`
-**File:** `path/spatialmt/model/tabicl.py` ✓ Implemented
+**File:** `path/spatialmt/model/tabgrn.py` ✓ Implemented
 
 **Purpose:** TabICLv2 backbone adapted for dual-head pseudotime regression and cell state composition. Manages differential learning rates and staged warmup.
 
@@ -381,7 +439,7 @@ builder.build(
 ---
 
 ### 3.6 `PseudotimeHead`
-**File:** `path/spatialmt/model/heads/pseudotime.py`
+**File:** `path/spatialmt/model/tabgrn.py` ✓ Implemented
 
 **Purpose:** Regression head producing a scalar pseudotime prediction in `(0, 1)` from the query cell representation.
 
@@ -403,7 +461,7 @@ nn.init.constant_(self.linear.bias, 0.5)                   # trajectory midpoint
 ---
 
 ### 3.7 `CompositionHead`
-**File:** `path/spatialmt/model/tabicl.py` ✓ Implemented
+**File:** `path/spatialmt/model/tabgrn.py` ✓ Implemented
 
 **Purpose:** Softmax head producing a K-dimensional probability vector representing cell state affinity across K=8 developmental states (from `class3` annotations). Current interim design; Dirichlet NLL planned for a later phase.
 
@@ -780,7 +838,8 @@ from spatialmt.config.experiment import ExperimentConfig
 from spatialmt.data_preparation.dataset import ProcessedDataset
 from spatialmt.context.sampler import ContextSampler
 from spatialmt.context.builder import CellTableBuilder
-from spatialmt.model.tabicl import TabICLRegressor
+from spatialmt.context.collate import icl_collate, ICLBatch
+from spatialmt.model.tabgrn import TabICLRegressor
 from spatialmt.explainability.scorers import AttentionScorer
 from spatialmt.training.trainer import Trainer
 
@@ -955,8 +1014,11 @@ correlated_expression           # GENE_02 and GENE_03 perfectly correlated (SHAP
 **Unit test files (all GREEN — 219 tests total):**
 - `tests/unit/test_experiment_config.py` — 32 tests: ExperimentConfig serialisation, hash, presets, sub-config validation
 - `tests/unit/test_dataset.py` — 29 tests: ProcessedDataset schema contract, soft label computation, manifest hash
-- `tests/unit/test_tabicl_model.py` — 53 tests: TabICLRegressor construction, forward pass contracts, AnchorLabelEmbedder, AttentionScorer, parameter groups, gradient flow
+- `tests/unit/test_tabgrn_model.py` — 53 tests: TabICLRegressor construction, forward pass contracts, AnchorLabelEmbedder, AttentionScorer, parameter groups, gradient flow
 - `tests/unit/test_dual_head_loss.py` — 26 tests: DualHeadLoss Kendall weighting, KL divergence component, uncertainty mechanics
+- `tests/unit/test_context_sampler.py` — 22 tests: ContextSampler bin assignment, day-11 exclusion, sparse bin warning, rng seeding
+- `tests/unit/test_cell_table_builder.py` — 27 tests: CellTableBuilder shape contracts, CellTable/TrainingTargets separation, KeyError on unknown ids, empty anchor list
+- `tests/unit/test_icl_collate.py` — 28 tests: ICLBatch field shapes, icl_collate dtype, ragged context window guard
 
 **Integration test files:**
 - `tests/integration/test_prep.py` — tests for `spatialmt.data_preparation.prep` (moved from `test/` in v1.3.0)
@@ -1054,7 +1116,7 @@ pytest tests/unit/ tests/smoke/ -v
 | Week 5 end (Apr 22) | Scaffold pseudotime integrated; `PreparedData` dataclass green | ✓ Complete |
 | Week 6 (Apr 29) | Diffusion pseudotime computed and validated; `ProcessedDataset.from_anndata` implemented and integration-tested | ✓ Complete |
 | Week 7 (Apr 21) | `TabICLRegressor` + `DualHeadLoss` fully implemented; 219 unit tests GREEN; pretrained `Encoder` (tf_icl) integrated; `AnchorLabelEmbedder` formalised | ✓ Complete |
-| Week 7 end (May 6) | **`ContextSampler` + `CellTableBuilder` implemented; training loop wired; first Myriad GPU job submitted — dual-head — critical gate** | In progress |
+| Week 7 end (May 6) | **`ContextSampler` + `CellTableBuilder` + `ICLBatch`/`icl_collate` implemented; training loop wired; first Myriad GPU job submitted — dual-head — critical gate** | `ContextSampler`, `CellTableBuilder`, `icl_collate` ✓ Complete — training loop + GPU job pending |
 | Week 8 (May 13) | Baseline ladder (mean → ridge → XGBoost) complete; comparison table generated | |
 | Week 10 (May 27) | Biological plausibility gate — SOX2 in top-20 | |
 | Week 11 (Jun 3) | WLS perturbation Signals 1 + 2 + 3 (composition shift) passing | |
@@ -1139,4 +1201,4 @@ Training baselines on the full dataset **removes both leakage concerns** and giv
 
 ---
 
-*This document reflects all architectural decisions through v1.4.0 (April 2026). The rotation scope (dual-head, regression baseline ladder, WLS/GLI3 perturbation validation) targets July 3rd.*
+*This document reflects all architectural decisions through v1.6.0 (April 2026). The rotation scope (dual-head, regression baseline ladder, WLS/GLI3 perturbation validation) targets July 3rd.*

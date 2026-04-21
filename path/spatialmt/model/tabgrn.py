@@ -1,5 +1,5 @@
 """
-spatialmt.model.tabicl — TabICLRegressor and sub-modules.
+spatialmt.model.tabgrn — TabICLRegressor and sub-modules.
 
 Backbone
 --------
