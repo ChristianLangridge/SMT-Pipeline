@@ -76,7 +76,7 @@ def test_context_config_defaults():
 
 def test_debug_preset_max_genes():
     cfg = ExperimentConfig.debug_preset()
-    assert cfg.data.max_genes == 128
+    assert cfg.data.max_genes == 256
 
 
 def test_debug_preset_hardware_tier():
@@ -86,7 +86,7 @@ def test_debug_preset_hardware_tier():
 
 def test_debug_preset_cells_per_bin():
     cfg = ExperimentConfig.debug_preset()
-    assert cfg.context.cells_per_bin == 2
+    assert cfg.context.cells_per_bin == 5
 
 
 def test_rotation_finetune_max_genes():
@@ -205,7 +205,7 @@ def test_config_round_trips_through_json():
     d = dataclasses.asdict(cfg)
     s = json.dumps(d, sort_keys=True)
     d2 = json.loads(s)
-    assert d2["data"]["max_genes"] == 128
+    assert d2["data"]["max_genes"] == 256
     assert d2["context"]["n_bins"] == 6
 
 
@@ -218,7 +218,7 @@ def test_save_writes_config_json(tmp_path, monkeypatch):
     assert config_file.exists()
     d = json.loads(config_file.read_text())
     assert d["run_id"] == "save_test"
-    assert d["data"]["max_genes"] == 128
+    assert d["data"]["max_genes"] == 256
 
 
 # ---------------------------------------------------------------------------
@@ -255,7 +255,7 @@ def test_config_hash_changes_with_different_lr():
 
 def test_config_hash_changes_with_different_max_genes():
     cfg1 = ExperimentConfig.debug_preset()
-    data_modified = DataConfig(max_genes=256, hardware_tier="debug")
+    data_modified = DataConfig(max_genes=512, hardware_tier="debug")
     cfg2 = ExperimentConfig(
         run_id=cfg1.run_id,
         data=data_modified,
